@@ -2014,6 +2014,8 @@ function render() {
   const na = S.nightAmt;
   const o = toScreen(-(MAP * TW / 2 + TERR.pad), -TERR.pad);
   const tw = terrain.width / TERR.scale * cam.z, th = terrain.height / TERR.scale * cam.z;
+  const OVL = r3on();   // 3D mode: the world is drawn in WebGL underneath; this canvas becomes the transparent overlay
+  if (OVL) ctx.clearRect(0, 0, vw, vh); else {
   ctx.fillStyle = "#EDE4D3"; ctx.fillRect(0, 0, vw, vh);
   if (na > 0) { ctx.globalAlpha = na; ctx.fillStyle = "#1F2633"; ctx.fillRect(0, 0, vw, vh); ctx.globalAlpha = 1; }
   ctx.drawImage(terrain, o.x, o.y, tw, th);
@@ -2021,7 +2023,8 @@ function render() {
   if (na > 0) { ctx.globalAlpha = na; ctx.drawImage(terrainNight, o.x, o.y, tw, th); ctx.globalAlpha = 1; }
 
   drawLands(na);
-  if (na > .05) {
+  }
+  if (na > .05 && !OVL) {
     ctx.save(); ctx.globalCompositeOperation = "screen";
     for (const b of S.buildings) { if (!done(b) || BUILDINGS[b.type].palisade) continue;
       const c = iso(b.tx + b.w / 2, b.ty + b.h / 2), q = toScreen(c.X, c.Y), R0 = (b.type === "keep" ? 170 : 80) * cam.z;
@@ -2029,8 +2032,8 @@ function render() {
       ctx.fillStyle = g; ctx.setTransform(dpr, 0, 0, dpr * .56, 0, q.y * dpr * .44); ctx.beginPath(); ctx.arc(q.x, q.y, R0, 0, 7); ctx.fill(); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); }
     ctx.restore();
   }
-  drawYards(na);
-  for (const b of S.buildings) if (BUILDINGS[b.type].paddy && done(b)) drawPaddies(b, na);
+  if (!OVL) { drawYards(na);
+  for (const b of S.buildings) if (BUILDINGS[b.type].paddy && done(b)) drawPaddies(b, na); }
   if (ui.place) drawPlacementGrid();
 
   for (const d of S.decals) {
@@ -2089,7 +2092,7 @@ function render() {
   for (const u of S.units) if (!u.hidden) list.push({ u });
   for (const it of list) it.box = boxOf(it);
   list.sort(drawOrder);
-  for (const it of list) { if (it.b) drawBuilding(it.b, na); else if (it.p) drawProp(it.p, na); else drawUnit(it.u, na); }
+  if (OVL) R3.bars(); else for (const it of list) { if (it.b) drawBuilding(it.b, na); else if (it.p) drawProp(it.p, na); else drawUnit(it.u, na); }
   if (ui.place) drawPlacementGhost();
 
   for (const p of S.projectiles) {
@@ -2688,6 +2691,507 @@ function drawDev() {
 }
 
 /* =========================================================================
+   RENDER 3D (?r=3d) — the same world drawn as an ink painting in 3D (Three.js).
+   One tile = one world unit: world X = tile x, world Z = tile y, Y is up.
+   The camera reproduces the 2D isometric projection exactly (true isometric:
+   sin(elevation) = TH / TW), so input, selection and every overlay drawn with
+   toScreen() line up. The 2D canvas stays on top as a transparent overlay for
+   selection, health bars, brush effects, labels and the placement ghost.
+   Buildings come from a code-built kit, soldiers from basic shapes; poses step
+   on twos (12 a second). Values: ink, gray wash, paper; vermilion only for the
+   Tsuru clan (banners on the keep, the weapon of every soldier).
+   ========================================================================= */
+const USE3D = /[?&]r=3d/.test(location.search);
+const R3 = { ready: false, loading: false, S: null, bmap: new Map(), umap: new Map(), fmap: new Map(), poseAcc: 0, last: 0 };
+let THREE = null;
+function r3on() { return USE3D && R3.ready && !!S; }
+
+const K3 = { ink: 0x1d1d21, tile: 0x575757, wood: 0x4d4d4d, stone: 0x868580, thatch: 0x9e9b94, plaster: 0xedeae2, yard: 0xcfc9bc, verm: 0xC8372D,
+  ground: 0xe4ddcd, water: 0x5f5d5a, plate: 0x5c5c5c, robe: 0x707070, yokai: 0x6a6a6e, yokaiDark: 0x3a3a3f, paper: 0xefe9dd, cloth: 0x8c8a85, pine: 0x45454a };
+
+/* ---------- geometry kit: every part is flattened into one mesh per building (one draw call) ---------- */
+function kitGeo(parts) {
+  const P = [], C = [], col = new THREE.Color();
+  for (const [g, hex] of parts) {
+    const ng = g.index ? g.toNonIndexed() : g, a = ng.attributes.position.array; col.setHex(hex);
+    for (let i = 0; i < a.length; i++) P.push(a[i]);
+    for (let i = 0; i < a.length / 3; i++) C.push(col.r, col.g, col.b);
+  }
+  const out = new THREE.BufferGeometry();
+  out.setAttribute("position", new THREE.Float32BufferAttribute(P, 3)); out.setAttribute("color", new THREE.Float32BufferAttribute(C, 3));
+  out.computeVertexNormals(); return out;
+}
+const M4 = () => new THREE.Matrix4(), E3 = (x, y, z) => new THREE.Euler(x, y, z);
+function place(g, x, y, z, rx = 0, ry = 0, rz = 0, s = 1) {
+  const m = M4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(E3(rx, ry, rz)), new THREE.Vector3(s, s, s)); g.applyMatrix4(m); return g;
+}
+class Kit {
+  constructor() { this.parts = []; }
+  add(g, hex) { this.parts.push([g, hex]); return this; }
+  box(x, y, z, sx, sy, sz, hex, top = 1, ry = 0) {   // sits on y; top < 1 = battered (sloped) sides
+    const g = new THREE.BoxGeometry(sx, sy, sz); const p = g.attributes.position;
+    if (top !== 1) for (let i = 0; i < p.count; i++) if (p.getY(i) > 0) { p.setX(i, p.getX(i) * top); p.setZ(i, p.getZ(i) * top); }
+    return this.add(place(g, x, y + sy / 2, z, 0, ry), hex);
+  }
+  cyl(x, y, z, r0, r1, h, hex, n = 6, rx = 0, rz = 0) { return this.add(place(new THREE.CylinderGeometry(r1, r0, h, n), x, y + h / 2, z, rx, 0, rz), hex); }
+  cone(x, y, z, r, h, hex, n = 4) { return this.add(place(new THREE.ConeGeometry(r, h, n), x, y + h / 2, z, 0, Math.PI / n), hex); }
+  rock(x, y, z, r, hex, seed = 1) { const g = new THREE.DodecahedronGeometry(r, 0); g.scale(1, .7, 1); return this.add(place(g, x, y + r * .45, z, seed, seed * 2.3, 0), hex); }
+  roof(x, y, z, w, d, h, o = {}) {   // hip roof, upswept eaves, gray tile slopes with a black fascia and ridge
+    const over = o.over ?? .2, sweep = o.sweep ?? .1, ridge = o.ridge ?? .35, thick = o.thick ?? .07, n = 6, slope = o.hex ?? K3.tile, edge = o.edge ?? K3.ink;
+    const W = w / 2 + over, D = d / 2 + over, R = W * ridge, ring = [];
+    const cs = [[-W, -D], [W, -D], [W, D], [-W, D]];
+    for (let k = 0; k < 4; k++) { const [x0, z0] = cs[k], [x1, z1] = cs[(k + 1) % 4];
+      for (let i = 0; i < n; i++) { const t = i / n; ring.push([x0 + (x1 - x0) * t, sweep * (2 * t - 1) ** 4, z0 + (z1 - z0) * t]); } }
+    const top = ([px, , pz]) => [Math.abs(pz) >= D - 1e-6 ? Math.max(-R, Math.min(R, px * R / W)) : (px > 0 ? R : -R), h, 0];
+    const S1 = [], S2 = [], m = ring.length, T = (arr, ...v) => v.forEach(p => arr.push(p[0] + x, p[1] + y, p[2] + z));
+    for (let i = 0; i < m; i++) { const j = (i + 1) % m, a = ring[i], b = ring[j], ta = top(a), tb = top(b), la = [a[0], a[1] - thick, a[2]], lb = [b[0], b[1] - thick, b[2]];
+      T(S1, a, b, tb); T(S1, a, tb, ta); T(S2, la, lb, b); T(S2, la, b, a); T(S2, la, [0, -thick, 0], lb); }
+    for (const [arr, hex] of [[S1, slope], [S2, edge]]) { const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(arr, 3)); this.add(g, hex); }
+    this.box(x, y + h - .03, z, 2 * R + .06, .07, .08, edge);
+    for (const s of [-1, 1]) this.cone(x + s * (R + .02), y + h + .02, z, .035, .13, edge);
+    return this;
+  }
+  stakes(x0, z0, x1, z1, n, h = .42, hex = K3.wood) { for (let i = 0; i <= n; i++) { const t = i / n, x = x0 + (x1 - x0) * t, z = z0 + (z1 - z0) * t; this.box(x, 0, z, .07, h, .07, hex); this.cone(x, h, z, .05, .1, hex); } return this; }
+  storey(y, w, d, h, nwin, roofH, o = {}) {
+    this.box(0, y, 0, w, h, d, K3.plaster); if (o.board !== false) this.box(0, y, 0, w + .02, h * .36, d + .02, K3.ink);
+    this.box(0, y + h - .06, 0, w + .02, .06, d + .02, K3.wood);
+    for (let s = 0; s < 4; s++) { const L = s % 2 ? d : w; for (let i = 0; i < nwin; i++) { const t = (i + .5) / nwin - .5;
+      const p = [[t * L, d / 2], [w / 2, t * L], [t * L, -d / 2], [-w / 2, t * L]][s]; this.box(p[0], y + h * .5, p[1], s % 2 ? .02 : .12, .13, s % 2 ? .12 : .02, K3.ink); } }
+    return this.roof(0, y + h, 0, w, d, roofH, o);
+  }
+  banners(xs, z, y0, h) { for (const x of xs) { this.box(x, y0, z, .03, h, .03, K3.wood); this.box(x + Math.sign(x) * .08, y0 + h * .55, z, .15, h * .42, .02, K3.verm); } return this; }
+  geo() { return kitGeo(this.parts); }
+}
+
+/* ---------- building recipes: footprint w × h tiles centred on the origin; tier 0..2 ---------- */
+function buildingKit(b) {
+  const K = new Kit(), d = BUILDINGS[b.type], W = b.w, H = b.h, t = b.tier || 0;
+  const thatchHouse = (w, dd, roofH = .9) => { K.box(0, 0, 0, w + .12, .1, dd + .12, K3.stone); K.box(0, .1, 0, w, .45, dd, K3.wood);
+    K.box(-w * .22, .17, dd / 2 + .005, w * .24, .26, .01, K3.plaster); K.box(w * .22, .17, dd / 2 + .005, w * .24, .26, .01, K3.plaster);
+    K.box(0, .1, dd / 2 + .01, w * .16, .34, .02, K3.ink); K.roof(0, .55, 0, w, dd, roofH, { over: .18, sweep: .03, ridge: .45, thick: .1, hex: K3.thatch });
+    K.box(0, .55 + roofH - .05, 0, w * .5, .08, .14, K3.ink); };
+  const hall = (w, dd, h, roofH, o = {}) => { K.box(0, 0, 0, w + .14, .14, dd + .14, K3.stone); K.storey(.14, w, dd, h, Math.max(1, Math.round(w * 1.6)), roofH, o); };
+  switch (b.type) {
+    case "keep":
+      if (t === 0) { K.box(0, 0, 0, 2.9, .06, 2.9, K3.yard); hall(1.9, 1.5, .6, .55, { over: .2, sweep: .12 });
+        K.stakes(-1.4, -1.4, 1.4, -1.4, 14).stakes(-1.4, -1.4, -1.4, 1.4, 14).stakes(1.4, -1.4, 1.4, 1.4, 14).stakes(-1.4, 1.4, -.35, 1.4, 5).stakes(.35, 1.4, 1.4, 1.4, 5);
+        K.box(-.35, 0, 1.4, .1, .7, .1, K3.ink).box(.35, 0, 1.4, .1, .7, .1, K3.ink).box(0, .66, 1.4, .86, .08, .12, K3.ink).banners([-1.25, 1.25], 1.3, 0, 1.3); }
+      else if (t === 1) { K.box(0, 0, 0, 2.8, .7, 2.6, K3.stone, .84); for (let i = 1; i < 3; i++) K.box(0, .7 * i / 3, 0, 2.8 * (1 - .16 * i / 3) + .01, .02, 2.6 * (1 - .16 * i / 3) + .01, K3.wood);
+        K.storey(.7, 1.9, 1.6, .8, 3, .4, { over: .22, sweep: .16 }); K.storey(1.9, 1.3, 1.1, .65, 2, .55, { over: .2, sweep: .15 });
+        K.box(0, 0, 1.3, .55, .5, .14, K3.ink).banners([-1.25, 1.25], 1.15, .7, 1.2); }
+      else { K.box(0, 0, 0, 2.9, .8, 2.6, K3.stone, .82); for (let i = 1; i < 4; i++) K.box(0, .8 * i / 4, 0, 2.9 * (1 - .18 * i / 4) + .01, .02, 2.6 * (1 - .18 * i / 4) + .01, K3.wood);
+        K.storey(.8, 2.0, 1.7, .88, 3, .36, { over: .22, sweep: .19 }); K.storey(2.04, 1.5, 1.25, .72, 2, .33, { over: .2, sweep: .17 });
+        K.storey(3.09, 1.05, .9, .63, 2, .52, { over: .19, sweep: .16 }); K.box(0, 0, 1.31, .6, .55, .14, K3.ink).banners([-1.25, 1.25], 1.12, .8, 1.45); }
+      break;
+    case "house":
+      if (t < 2) thatchHouse(.72 + t * .1, .56 + t * .08, .7 + t * .1); else hall(.78, .6, .42, .4, { over: .14, sweep: .08 });
+      break;
+    case "dojo": {
+      K.box(0, 0, 0, W - .1, .04, H - .1, K3.yard); const e = W / 2 - .12;
+      K.stakes(-e, -e, e, -e, 9, .3).stakes(-e, -e, -e, e, 9, .3).stakes(e, -e, e, e, 9, .3).stakes(-e, e, -.3, e, 3, .3).stakes(.3, e, e, e, 3, .3);
+      K.box(-.28, .04, -.3, .9 + t * .1, .42 + t * .05, .7, K3.plaster).box(-.28, .04, -.3, .92 + t * .1, .15, .72, K3.ink).roof(-.28, .46 + t * .05, -.3, .9 + t * .1, .7, .38 + t * .05, { over: .14, sweep: .08 });
+      for (let i = 0; i < 3; i++) K.box(.25 + i * .22, .04, .5, .03, .36, .03, K3.wood).box(.25 + i * .22, .27, .5, .14, .14, .05, K3.thatch);
+      K.box(.6, .04, -.45, .4, .4, .04, K3.wood); for (let i = 0; i < 3; i++) K.box(.46 + i * .14, .04, -.42, .02, .7, .02, K3.ink);
+      break; }
+    case "granary": {
+      const kura = (x, z, s) => { K.box(x, 0, z, .62 * s, .1, .52 * s, K3.stone).box(x, .1, z, .55 * s, .55 * s, .45 * s, K3.plaster).box(x, .1, z, .56 * s, .2 * s, .46 * s, K3.ink)
+        .roof(x, .1 + .55 * s, z, .55 * s, .45 * s, .3 * s, { over: .09, sweep: .04, ridge: .5, thick: .08 }).box(x, .1, z + .23 * s, .14 * s, .3 * s, .02, K3.ink); };
+      kura(-.25, -.2, 1.25); if (t >= 1) kura(.5, .45, .8); if (t >= 2) kura(-.5, .55, .7);
+      break; }
+    case "lumber": {
+      const shed = (x, z, w) => { for (const [px, pz] of [[-w / 2, -.25], [w / 2, -.25], [-w / 2, .25], [w / 2, .25]]) K.box(x + px, 0, z + pz, .06, .5, .06, K3.wood);
+        K.roof(x, .5, z, w, .5, .22, { over: .1, sweep: .03, hex: t >= 1 ? K3.tile : K3.thatch }); };
+      shed(-.3, -.35, .8); if (t >= 1) shed(.45, -.35, .5);
+      for (let i = 0; i < 4 + t * 2; i++) K.cyl(-.5 + (i % 3) * .14, .07 + Math.floor(i / 3) * .12, .45, .06, .06, .7, K3.wood, 6, Math.PI / 2, 0);
+      K.cyl(.45, 0, .35, .1, .1, .12, K3.wood).cyl(.65, 0, .55, .09, .09, .1, K3.wood);
+      if (t >= 2) K.box(.6, 0, .05, .04, 1.1, .04, K3.ink).box(.6, 1.05, .05, .5, .04, .04, K3.ink);
+      break; }
+    case "tower":
+      if (t < 2) { const h = t ? 1.5 : 1.25; for (const [x, z] of [[-.3, -.3], [.3, -.3], [-.3, .3], [.3, .3]]) K.box(x, 0, z, .07, h, .07, K3.wood);
+        K.box(0, .35, 0, .62, .04, .04, K3.wood).box(0, .35, 0, .04, .04, .62, K3.wood).box(0, h, 0, .78, .06, .78, K3.wood);
+        if (t) K.box(0, h + .06, 0, .76, .22, .76, K3.wood); else for (const [x, z] of [[-.36, 0], [.36, 0]]) K.box(x, h + .06, z, .04, .2, .76, K3.wood);
+        K.roof(0, h + (t ? .28 : .3), 0, .6, .6, .32, { over: .14, sweep: .06, hex: t ? K3.tile : K3.thatch }); }
+      else { K.box(0, 0, 0, .92, .45, .92, K3.stone, .85); K.storey(.45, .7, .7, .62, 1, .38, { over: .16, sweep: .1 }); }
+      break;
+    case "stable":
+      K.box(0, 0, 0, W - .3, .1, H * .55, K3.stone); K.box(0, .1, -.15, W - .4, .45, H * .45, K3.wood);
+      for (let i = 0; i < 4; i++) K.box(-.6 + i * .4, .18, -.15 + H * .225 + .005, .22, .25, .01, K3.ink);
+      K.roof(0, .55, -.15, W - .4, H * .45, .38, { over: .16, sweep: t ? .08 : .02, hex: t ? K3.tile : K3.thatch, ridge: .6 });
+      if (t >= 1) K.stakes(-.8, .65, .8, .65, 8, .26); if (t >= 2) K.box(.75, 0, .55, .2, .05, .2, K3.thatch).box(-.75, 0, .5, .25, .06, .15, K3.wood);
+      break;
+    case "range": {
+      if (t >= 2) K.box(0, 0, -.45, W - .2, .18, .6, K3.stone);
+      const y0 = t >= 2 ? .18 : 0; for (const x of [-.8, -.27, .27, .8]) K.box(x, y0, -.45, .06, .5, .06, K3.wood);
+      K.roof(0, y0 + .5, -.45, 1.7, .45, .22, { over: .12, sweep: .05, hex: t ? K3.tile : K3.thatch, ridge: .7 });
+      K.box(0, 0, .2, 1.7, .02, .7, K3.yard); for (const x of [-.6, 0, .6]) K.box(x, 0, .7, .04, .42, .04, K3.wood).cyl(x, .24, .7, .17, .17, .05, K3.thatch, 10, Math.PI / 2, 0).cyl(x, .24, .73, .06, .06, .02, K3.ink, 8, Math.PI / 2, 0);
+      break; }
+    case "temple":
+      K.box(0, 0, 0, W - .1, .22, H - .1, K3.stone); K.box(0, .22, 0, W - .5, .5, H - .7, K3.plaster); K.box(0, .22, 0, W - .48, .14, H - .68, K3.ink);
+      for (const x of [-.6, -.2, .2, .6]) K.box(x, .22, (H - .7) / 2 + .02, .06, .5, .06, K3.ink);
+      K.roof(0, .72, 0, W - .5, H - .7, .7, { over: .3, sweep: .2, ridge: .45 });
+      K.box(0, .22, (H - .1) / 2 - .05, .5, .04, .2, K3.wood);
+      if (t >= 1) { K.box(.75, .22, .65, .04, .55, .04, K3.wood).box(.55, .22, .65, .04, .55, .04, K3.wood).roof(.65, .77, .65, .22, .18, .14, { over: .06, sweep: .03 }).cyl(.65, .45, .65, .08, .06, .16, K3.ink, 8); }
+      if (t >= 2) K.box(0, .72 + .7 * .35, 0, .7, .3, .5, K3.plaster).roof(0, 1.01 + .35 * .7 - .24, 0, .7, .5, .38, { over: .2, sweep: .14 });
+      break;
+    case "hideout":
+      K.box(0, 0, 0, W - .1, .03, H - .1, K3.yard);
+      { const w = .95, dd = .7; K.box(-.2, 0, -.2, w + .1, .1, dd + .1, K3.stone).box(-.2, .1, -.2, w, .45, dd, K3.wood).box(-.2, .1, -.2 + dd / 2 + .01, .14, .32, .02, K3.ink)
+        .roof(-.2, .55, -.2, w, dd, .75, { over: .16, sweep: .03, ridge: .45, thick: .1, hex: K3.thatch }).box(-.2, 1.25, -.2, .45, .07, .12, K3.ink); }
+      if (t >= 1) K.box(.62, 0, .55, .45, .32, .4, K3.wood).roof(.62, .32, .55, .45, .4, .22, { over: .06, sweep: .02, hex: K3.thatch });
+      if (t >= 2) for (const x of [-.85, -.55, -.25]) K.box(x, 0, .8, .26, .45, .03, K3.thatch);
+      break;
+    case "smith":
+      hall(1.2 + t * .1, .95, .5, .45, { over: .16, sweep: .07, board: t > 0 });
+      K.box(.45, .64, -.2, .16, .75, .16, K3.stone).box(.45, 1.39, -.2, .2, .05, .2, K3.ink);
+      K.box(-.55, 0, .7, .16, .16, .1, K3.ink).box(-.55, .16, .7, .24, .05, .12, K3.ink);
+      if (t >= 1) K.stakes(-.9, .9, .9, .9, 10, .25);
+      break;
+    case "wall": {
+      const n = [[0, -1, 0, -.5], [1, 0, .5, 0], [0, 1, 0, .5], [-1, 0, -.5, 0]].filter(([dx, dy]) => palAt(b.tx + dx, b.ty + dy));
+      const runs = n.length ? n : [[0, 0, -.5, 0], [0, 0, .5, 0]];
+      for (const [, , ex, ez] of runs) K.stakes(0, 0, ex, ez, 3, .55);
+      K.box(0, 0, 0, .1, .6, .1, K3.wood);
+      break; }
+    case "gate": {
+      const ew = palAt(b.tx - 1, b.ty) || palAt(b.tx + 1, b.ty);
+      const ax = ew ? [1, 0] : [0, 1];
+      for (const s of [-1, 1]) K.box(s * .42 * ax[0], 0, s * .42 * ax[1], .11, .85, .11, K3.ink);
+      K.box(0, .8, 0, ew ? 1 : .14, .1, ew ? .14 : 1, K3.ink).box(0, .9, 0, ew ? 1.1 : .2, .05, ew ? .2 : 1.1, K3.ink);
+      K.box(0, 0, 0, ew ? .7 : .05, .6, ew ? .05 : .7, K3.wood);
+      break; }
+    default:
+      hall(W * .7, H * .6, .5, .45);
+  }
+  return K.geo();
+}
+function scaffoldKit(b, f) {   // under construction: a pole frame and a stone base; the building rises with progress
+  const K = new Kit(), W = b.w / 2 - .08, H = b.h / 2 - .08, top = .4 + f * .9;
+  K.box(0, 0, 0, b.w - .1, .06, b.h - .1, K3.yard);
+  for (const [x, z] of [[-W, -H], [W, -H], [-W, H], [W, H], [0, -H], [0, H], [-W, 0], [W, 0]]) K.box(x, 0, z, .04, top, .04, K3.wood);
+  for (const y of [top * .45, top]) { K.box(0, y, -H, 2 * W, .03, .03, K3.wood).box(0, y, H, 2 * W, .03, .03, K3.wood).box(-W, y, 0, .03, .03, 2 * H, K3.wood).box(W, y, 0, .03, .03, 2 * H, K3.wood); }
+  return K.geo();
+}
+
+/* ---------- figures: basic shapes, limbs that swing from their joints ---------- */
+const FIG = {};
+function figMat() { return FIG.mat || (FIG.mat = new THREE.MeshLambertMaterial({ vertexColors: true })); }
+function part(parent, kit, x = 0, y = 0, z = 0) { const m = new THREE.Mesh(kit.geo(), figMat()); m.position.set(x, y, z); parent.add(m); return m; }
+function humanoid(o) {
+  // o: { cloth, armor, legs, skirt, wide, hip, hat(K, top), weapon(K) in the weapon arm's space, back(K, top), robe, scale, crouch }
+  const root = new THREE.Group(), body = new THREE.Group(); root.add(body);
+  const wide = o.wide || 1, hip = o.hip || .62, top = hip + .78, cloth = o.cloth ?? K3.ink;
+  const legs = [];
+  if (!o.robe) for (const sx of [-.1, .1]) { const g = new THREE.Group(); g.position.set(sx * wide, hip, 0); body.add(g);
+    const k = new Kit().box(0, -hip, 0, .15, hip, .16, o.legs ?? K3.paper).box(0, -hip, .03, .14, .1, .2, K3.ink); part(g, k); legs.push(g); }
+  const K = new Kit();
+  if (o.robe) K.cyl(0, 0, 0, .44 * wide, .24 * wide, hip + .38, o.robe, 7);
+  else K.cyl(0, hip - .04, 0, .36 * wide, .24 * wide, .36, o.skirt ?? K3.plate, 6);
+  K.box(0, hip + .32, 0, .5 * wide, .46, .32, cloth);
+  if (o.armor !== false) for (const s of [-1, 1]) K.box(s * .33 * wide, top - .26, 0, .17, .24, .32 * wide, o.armor ?? K3.plate);
+  K.box(0, top, 0, .22, .25, .22, o.face ?? K3.paper);
+  if (o.hat) o.hat(K, top);
+  if (o.back) o.back(K, top);
+  part(body, K);
+  const arms = [];
+  for (const s of [-1, 1]) { const g = new THREE.Group(); g.position.set(-s * .31 * wide, top - .06, 0); body.add(g);
+    const k = new Kit().box(0, -.5, 0, .12, .5, .13, o.arm ?? cloth).box(0, -.6, 0, .1, .1, .1, K3.paper);
+    if (s === -1 && o.weapon) o.weapon(k); if (s === 1 && o.offhand) o.offhand(k); part(g, k); arms.push(g); }
+  if (o.crouch) body.rotation.x = o.crouch;
+  root.userData = { body, legs, armR: arms[0], armL: arms[1], weaponArm: o.weaponLeft ? arms[1] : arms[0], scale: o.scale || 1, float: !!o.float };
+  return root;
+}
+const jingasa = (K, top, hex = K3.ink) => K.cone(0, top + .22, 0, .44, .22, hex, 10);
+function figure(type) {
+  const sp = (k, len = 2.6) => k.cyl(0, -.6 - len * .25, .05, .03, .03, len, K3.verm, 4, .08).cone(0, -.6 - len * .25 + len, .1, .055, .28, K3.paper);
+  switch (type) {
+    case "spear": return humanoid({ hat: jingasa, weapon: k => sp(k) });
+    case "archer": return humanoid({ hat: (K, t) => K.box(0, t + .2, 0, .24, .1, .24, K3.ink).box(0, t + .14, 0, .25, .05, .25, K3.paper),
+      offhand: k => k.add(place(new THREE.TorusGeometry(.78, .036, 4, 14, Math.PI * .85), .02, -.45, .08, 0, Math.PI / 2, Math.PI / 2 + Math.PI * .075), K3.verm),
+      back: (K, t) => K.cyl(.12, t - .55, -.2, .07, .07, .55, K3.plate, 6, -.35), weaponLeft: true });
+    case "samurai": return humanoid({ wide: 1.15, hat: (K, t) => { K.add(place(new THREE.SphereGeometry(.17, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2), 0, t + .23, 0), K3.ink);
+      K.cyl(0, t + .1, -.02, .34, .18, .16, K3.ink, 8); K.add(place(new THREE.TorusGeometry(.2, .035, 4, 12, Math.PI), 0, t + .38, .14), K3.paper); },
+      back: (K, t) => K.box(.24, t - .7, .12, .06, .06, .9, K3.verm, 1, .3), weapon: k => k.box(0, -.75, .1, .04, .5, .04, K3.paper) });
+    case "monk": return humanoid({ robe: K3.ink, hat: (K, t) => K.box(0, t - .02, -.02, .32, .34, .32, K3.paper).box(0, t + .15, .15, .2, .05, .02, K3.ink),
+      weapon: k => k.cyl(0, -1.0, .05, .03, .03, 2.4, K3.verm, 4, .12).box(0, 1.35, .25, .05, .5, .1, K3.paper) });
+    case "ninja": return humanoid({ cloth: K3.robe, legs: K3.robe, skirt: K3.robe, armor: false, hip: .55, crouch: .18,
+      hat: (K, t) => K.box(0, t - .01, -.01, .27, .3, .27, K3.ink).box(0, t + .14, .13, .18, .06, .02, K3.paper),
+      back: (K, t) => K.box(.1, t - .48, -.2, .06, .55, .06, K3.verm, 1, 0) });
+    case "gunner": return humanoid({ hat: jingasa, weapon: k => k.cyl(0, -.62, .1, .03, .03, 1.1, K3.ink, 5, Math.PI / 2 - .2).box(0, -.62, -.3, .06, .1, .3, K3.verm) });
+    case "kage": return humanoid({ cloth: K3.ink, legs: K3.ink, skirt: K3.ink, armor: false, face: K3.ink, scale: 1.05,
+      hat: (K, t) => K.box(0, t + .13, .12, .16, .05, .02, K3.paper).box(0, t - .05, -.18, .16, .08, .5, K3.verm), weapon: k => k.box(0, -.95, .1, .04, .6, .04, K3.paper) });
+    case "farmer": return humanoid({ cloth: K3.cloth, armor: false, skirt: K3.cloth, hat: (K, t) => K.cone(0, t + .2, 0, .4, .16, K3.thatch, 10), scale: .92 });
+    case "cutter": return humanoid({ cloth: K3.wood, armor: false, skirt: K3.wood, hat: (K, t) => K.box(0, t + .2, 0, .24, .06, .24, K3.paper), scale: .92,
+      weapon: k => k.cyl(0, -.9, .05, .025, .025, .6, K3.wood, 4).box(0, -.35, .12, .04, .12, .16, K3.paper) });
+    case "builder": return humanoid({ cloth: K3.robe, armor: false, skirt: K3.robe, hat: (K, t) => K.box(0, t + .2, 0, .25, .05, .25, K3.paper), scale: .92,
+      weapon: k => k.cyl(0, -.8, .05, .025, .025, .45, K3.wood, 4).box(0, -.38, .05, .1, .12, .16, K3.ink) });
+    // ---- yokai: cool gray ink, paper accents, never vermilion ----
+    case "oni": return humanoid({ cloth: K3.yokai, arm: K3.yokai, legs: K3.yokai, skirt: K3.paper, armor: false, face: K3.yokai, wide: 1.35, scale: 1.25,
+      hat: (K, t) => K.cone(-.08, t + .25, 0, .04, .18, K3.paper).cone(.08, t + .25, 0, .04, .18, K3.paper).box(0, t + .12, .115, .14, .04, .01, K3.paper),
+      weapon: k => k.cyl(0, -1.3, .1, .05, .09, 1.0, K3.yokaiDark, 6) });
+    case "brute": return humanoid({ cloth: K3.yokaiDark, arm: K3.yokaiDark, legs: K3.yokaiDark, skirt: K3.paper, armor: false, face: K3.yokaiDark, wide: 1.5, scale: 1.55,
+      hat: (K, t) => K.cone(-.09, t + .25, 0, .05, .24, K3.paper).cone(.09, t + .25, 0, .05, .24, K3.paper).box(0, t + .12, .115, .16, .05, .01, K3.paper),
+      weapon: k => k.cyl(0, -1.5, .1, .06, .12, 1.3, K3.ink, 6) });
+    case "kappa": return humanoid({ cloth: K3.yokai, arm: K3.yokai, legs: K3.yokai, skirt: K3.yokai, armor: false, face: K3.yokai, scale: .85, hip: .45, crouch: .4,
+      hat: (K, t) => K.cyl(0, t + .25, 0, .14, .14, .03, K3.paper, 10), back: (K, t) => K.box(0, t - .55, -.2, .44, .5, .16, K3.yokaiDark) });
+    case "tengu": return humanoid({ cloth: K3.paper, skirt: K3.paper, legs: K3.yokai, armor: false, face: K3.yokai, scale: 1.15,
+      hat: (K, t) => K.box(0, t + .1, .16, .05, .05, .2, K3.yokai).box(0, t + .26, 0, .1, .08, .1, K3.ink),
+      back: (K, t) => { K.box(-.3, t - .45, -.22, .5, .7, .04, K3.ink, 1, .5); K.box(.3, t - .45, -.22, .5, .7, .04, K3.ink, 1, -.5); },
+      weapon: k => k.box(0, -.75, .1, .26, .3, .03, K3.paper) });
+    case "ghost": return humanoid({ robe: K3.paper, cloth: K3.paper, arm: K3.paper, armor: false, face: K3.paper, float: true,
+      hat: (K, t) => K.box(0, t + .02, -.06, .26, .42, .16, K3.ink) });
+    case "kitsune": {
+      const root = new THREE.Group(), body = new THREE.Group(); root.add(body);
+      part(body, new Kit().box(0, .42, 0, .3, .26, .7, K3.paper).box(0, .58, .42, .22, .2, .26, K3.paper).cone(-.07, .7, .44, .04, .13, K3.paper).cone(.07, .7, .44, .04, .13, K3.paper)
+        .box(0, .58, .6, .08, .07, .1, K3.ink).add(place(new THREE.ConeGeometry(.16, .7, 6), 0, .7, -.55, -1.1, 0, 0), K3.paper));
+      const legs = []; for (const [x, z] of [[-.1, .25], [.1, .25], [-.1, -.25], [.1, -.25]]) { const g = new THREE.Group(); g.position.set(x, .42, z); body.add(g); part(g, new Kit().box(0, -.42, 0, .07, .42, .08, K3.ink)); legs.push(g); }
+      root.userData = { body, legs, armR: null, armL: null, weaponArm: null, scale: 1, quad: true }; return root; }
+    case "gashadokuro": {
+      const root = new THREE.Group(), body = new THREE.Group(); root.add(body);
+      const K = new Kit().box(0, 1.3, 0, .16, 1.0, .16, K3.paper);
+      for (let i = 0; i < 4; i++) K.box(0, 1.45 + i * .18, .05, .7 - i * .08, .06, .4, K3.paper);
+      K.add(place(new THREE.SphereGeometry(.32, 8, 6), 0, 2.55, .05), K3.paper).box(-.12, 2.55, .32, .1, .1, .02, K3.ink).box(.12, 2.55, .32, .1, .1, .02, K3.ink).box(0, 2.32, .3, .24, .05, .02, K3.ink);
+      part(body, K);
+      const legs = []; for (const s of [-.18, .18]) { const g = new THREE.Group(); g.position.set(s, 1.3, 0); body.add(g); part(g, new Kit().box(0, -1.3, 0, .1, 1.3, .1, K3.paper)); legs.push(g); }
+      const arms = []; for (const s of [-1, 1]) { const g = new THREE.Group(); g.position.set(-s * .5, 2.0, 0); body.add(g); part(g, new Kit().box(0, -1.3, 0, .09, 1.3, .09, K3.paper).box(0, -1.4, .05, .22, .14, .22, K3.paper)); arms.push(g); }
+      root.userData = { body, legs, armR: arms[0], armL: arms[1], weaponArm: arms[0], scale: 1.45 }; return root; }
+    case "cavalry": {
+      const root = new THREE.Group(), body = new THREE.Group(); root.add(body);
+      part(body, new Kit().box(0, .62, 0, .34, .38, .95, K3.ink).box(0, .9, .52, .2, .4, .22, K3.ink, 1).box(0, 1.08, .7, .16, .16, .34, K3.ink).box(0, .62, -.52, .06, .4, .06, K3.ink)
+        .box(0, 1.0, 0, .48, .06, .5, K3.plate));   // horse and saddle cloth
+      const rider = humanoid({ hat: (K, t) => { K.add(place(new THREE.SphereGeometry(.17, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2), 0, t + .23, 0), K3.ink); K.cyl(0, t + .1, -.02, .34, .18, .16, K3.ink, 8); },
+        weapon: k => k.cyl(0, -.9, .05, .03, .03, 2.8, K3.verm, 4, .55).cone(0, .5, 1.0, .055, .28, K3.paper) });
+      rider.userData.legs.forEach(l => l.visible = false); rider.position.set(0, .5, -.02); body.add(rider);
+      const legs = []; for (const [x, z] of [[-.12, .35], [.12, .35], [-.12, -.35], [.12, -.35]]) { const g = new THREE.Group(); g.position.set(x, .45, z); body.add(g); part(g, new Kit().box(0, -.45, 0, .08, .45, .09, K3.ink).box(0, -.45, 0, .1, .07, .12, K3.paper)); legs.push(g); }
+      root.userData = { body, legs, armR: rider.userData.armR, armL: rider.userData.armL, weaponArm: rider.userData.armR, scale: 1.05, quad: true }; return root; }
+  }
+  return humanoid({});
+}
+
+/* ---------- props, landmarks, set-pieces, river and ridge ---------- */
+function propKit(art, w, h, seed) {
+  const K = new Kit(), r = n => { const s = Math.sin(seed * 12.9898 + n * 78.233) * 43758.5453; return s - Math.floor(s); };
+  const pine = (x, z, s) => { K.box(x, 0, z, .08 * s, .35 * s, .08 * s, K3.wood); for (let i = 0; i < 3; i++) K.cone(x, (.25 + i * .32) * s, z, (.46 - i * .1) * s, .55 * s, K3.pine, 7); };
+  const tufts = (n, hex = K3.thatch) => { for (let i = 0; i < n; i++) K.cone((r(i) - .5) * w * .8, 0, (r(i + 9) - .5) * h * .8, .04, .18 + r(i + 3) * .1, hex, 3); };
+  switch (art) {
+    case "pine": case "win_pine": pine(0, 0, 1.15); break;
+    case "pine2": pine(-.15, .1, .95); pine(.2, -.15, .7); break;
+    case "rocks": K.rock(-.12, 0, .05, .26, K3.stone, seed).rock(.18, 0, -.1, .18, K3.stone, seed + 1); break;
+    case "bale": K.cyl(0, 0, 0, .22, .2, .3, K3.thatch, 8).cone(0, .3, 0, .2, .14, K3.thatch, 8); break;
+    case "sc_maple": K.box(0, 0, 0, .08, .5, .08, K3.wood).add(place(new THREE.IcosahedronGeometry(.42, 0), 0, .78, 0, seed, seed, 0), K3.plate); break;
+    case "sc_bamboo": for (let i = 0; i < 7; i++) K.cyl((r(i) - .5) * .7, 0, (r(i + 4) - .5) * .7, .035, .03, 1.2 + r(i + 7) * .5, K3.wood, 5); break;
+    case "sc_grass": case "sc_reeds": tufts(5); break;
+    case "sp_hill": K.add(place(new THREE.ConeGeometry(1.45, .7, 9), 0, .35, 0, 0, seed, 0), K3.thatch); pine(-.3, .2, .8); pine(.4, -.2, .7); break;
+    case "sp_outcrop": K.rock(0, 0, 0, .9, K3.stone, seed).rock(.8, 0, .5, .5, K3.stone, seed + 1).rock(-.7, 0, .7, .4, K3.stone, seed + 2); pine(-.8, -.8, .7); break;
+    case "sp_boulders": for (let i = 0; i < 5; i++) K.rock((r(i) - .5) * 2.2, 0, (r(i + 5) - .5) * 2.2, .3 + r(i + 2) * .35, K3.stone, seed + i); break;
+    case "sp_bamboo": for (let i = 0; i < 22; i++) K.cyl((r(i) - .5) * 2.6, 0, (r(i + 30) - .5) * 2.6, .035, .03, 1.3 + r(i + 7) * .8, K3.wood, 5); break;
+    case "sp_pond": K.cyl(0, 0, 0, 1.25, 1.25, .02, K3.water, 14); tufts(10); K.rock(1.05, 0, -.4, .2, K3.stone, seed); break;
+    case "sp_stream": K.box(0, 0, 0, .7, .02, 3, K3.water, 1, .4); K.rock(.6, 0, .4, .2, K3.stone, seed).rock(-.6, 0, -.6, .25, K3.stone, seed + 2); tufts(8); break;
+    case "lm_shrine": K.box(0, 0, 0, 1.2, .14, 1.0, K3.stone).box(0, .14, -.1, .7, .45, .55, K3.plaster).roof(0, .59, -.1, .7, .55, .4, { over: .14, sweep: .1 });
+      K.box(-.38, 0, .62, .07, .75, .07, K3.ink).box(.38, 0, .62, .07, .75, .07, K3.ink).box(0, .72, .62, 1.0, .07, .09, K3.ink).box(0, .6, .62, .8, .05, .06, K3.ink); break;
+    case "lm_ruin": K.box(-.4, 0, -.2, .15, .6, .9, K3.stone).box(.2, 0, -.5, .9, .4, .15, K3.stone).box(.5, 0, .3, .15, .25, .5, K3.stone).rock(0, 0, .4, .25, K3.stone, seed); break;
+    case "lm_lantern": K.box(0, 0, 0, .4, .1, .4, K3.stone).cyl(0, .1, 0, .08, .08, .5, K3.stone, 6).box(0, .6, 0, .3, .25, .3, K3.stone).box(0, .68, .151, .12, .1, .01, K3.ink).cone(0, .85, 0, .3, .2, K3.stone, 4); break;
+    case "lm_farm": K.box(-.2, 0, -.2, .9, .4, .6, K3.wood).roof(-.2, .4, -.2, .9, .6, .55, { over: .14, sweep: .02, hex: K3.thatch, ridge: .45 }); K.box(.5, 0, .55, .8, .02, .6, K3.yard); break;
+    default: K.rock(0, 0, 0, .2, K3.stone, seed);
+  }
+  return K.geo();
+}
+
+/* ---------- the world: ground, river, ridge, the painted hills beyond the map ---------- */
+function buildWorld() {
+  const old = R3.world; if (old) { R3.scene.remove(old); old.traverse(o => o.geometry && o.geometry.dispose()); }
+  R3.bmap.clear(); R3.umap.clear(); R3.fmap.clear();
+  const W = new THREE.Group(); R3.scene.add(W); R3.world = W; R3.S = S;
+  const mat = R3.kitMat, N = MAP;
+  const hash = (x, y) => { const s = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return s - Math.floor(s); };
+  // the ground runs past the map; outside it rises into hills that the post pass paints as ink wash
+  const G = new THREE.PlaneGeometry(N + 40, N + 40, 96, 96); G.rotateX(-Math.PI / 2); G.translate(N / 2, 0, N / 2);
+  const p = G.attributes.position, col = [], c = new THREE.Color();
+  for (let i = 0; i < p.count; i++) { const x = p.getX(i), z = p.getZ(i), out = Math.max(-x, -z, x - N, z - N);
+    const h = out > 0 ? Math.min(1, out / 7) ** 1.5 * (3 + 4 * hash(Math.floor(x / 3), Math.floor(z / 3))) : 0; p.setY(i, h);
+    c.setHex(K3.ground); const k = .97 + hash(Math.floor(x * 2), Math.floor(z * 2)) * .05; col.push(c.r * k, c.g * k, c.b * k); }
+  G.setAttribute("color", new THREE.Float32BufferAttribute(col, 3)); G.computeVertexNormals();
+  W.add(new THREE.Mesh(G, mat));
+  const K = new Kit();
+  if (CH.river) { const rx = CH.river.x + .5, br = CH.river.bridge;
+    K.box(rx, -.04, br / 2, 1.3, .05, br, K3.water).box(rx, -.04, (br + 2 + N) / 2, 1.3, .05, N - br - 2, K3.water);
+    K.box(rx, .05, br + 1, 1.7, .08, 1.7, K3.wood); for (const s of [-1, 1]) K.box(rx, .13, br + 1 + s * .8, 1.7, .12, .06, K3.ink); }
+  if (CH.ridge) for (let x = 0; x <= CH.ridge.sum; x++) if (!CH.ridge.gaps.includes(x)) { const y = CH.ridge.sum - x;
+    K.rock(x + .5, 0, y + .5, .55 + hash(x, y) * .25, K3.stone, x).rock(x + .2, 0, y + .8, .3, K3.stone, x + 3); }
+  // pines dotted on the hills beyond the map edge, for the painting to read as land
+  for (let i = 0; i < 160; i++) { const a = hash(i, 1) * Math.PI * 2, r0 = N * .72 + 3 + hash(i, 2) * 12, x = N / 2 + Math.cos(a) * r0, z = N / 2 + Math.sin(a) * r0;
+    const out = Math.max(-x, -z, x - N, z - N); if (out < 1) continue; const h = Math.min(1, out / 7) ** 1.5 * (3 + 4 * hash(Math.floor(x / 3), Math.floor(z / 3)));
+    for (let t = 0; t < 3; t++) K.cone(x, h + .2 + t * .35, z, .5 - t * .12, .6, K3.pine, 6); }
+  if (K.parts.length) W.add(new THREE.Mesh(K.geo(), mat));
+  for (const pr of S.props) if (!pr.invisible && pr.art) {
+    const m = new THREE.Mesh(propKit(pr.art, pr.w, pr.h, pr.id), mat); m.position.set(pr.tx + pr.w / 2, 0, pr.ty + pr.h / 2); W.add(m); }
+  // (grass and reed decor is left to the painted ground for now: tufts this small turn into specks under the ink pass)
+}
+
+/* ---------- sync with the simulation each frame ---------- */
+function syncBuildings() {
+  const seen = new Set();
+  for (const b of S.buildings) {
+    seen.add(b.id);
+    const f = b.progress >= 1 ? 1 : Math.round(b.progress * 4) / 4;
+    const nb = BUILDINGS[b.type].palisade ? [[0, -1], [1, 0], [0, 1], [-1, 0]].map(([x, y]) => palAt(b.tx + x, b.ty + y) ? 1 : 0).join("") : "";
+    const key = `${b.type}|${b.tier}|${f}|${nb}`;
+    let e = R3.bmap.get(b.id);
+    if (!e || e.key !== key) {
+      if (e) { R3.world.remove(e.g); e.g.traverse(o => o.geometry && o.geometry.dispose()); }
+      const g = new THREE.Group(); g.position.set(b.tx + b.w / 2, 0, b.ty + b.h / 2);
+      if (f < 1) { g.add(new THREE.Mesh(scaffoldKit(b, f), R3.kitMat)); const inner = new THREE.Mesh(buildingKit(b), R3.kitMat); inner.scale.y = Math.max(.15, f); g.add(inner); }
+      else g.add(new THREE.Mesh(buildingKit(b), R3.kitMat));
+      if (b.flip) g.rotation.y = Math.PI / 2;
+      const box = new THREE.Box3().setFromObject(g); e = { g, key, h: box.max.y }; R3.world.add(g); R3.bmap.set(b.id, e);
+    }
+    e.g.scale.y = b.progress >= 1 && b.hp < b.maxHp * .25 ? .92 : 1;   // badly damaged buildings sag
+  }
+  for (const [id, e] of R3.bmap) if (!seen.has(id)) { R3.world.remove(e.g); e.g.traverse(o => o.geometry && o.geometry.dispose()); R3.bmap.delete(id); }
+  // paddies: pale plates with dark bunds; the crop rises with each stage
+  const fseen = new Set();
+  for (const b of S.buildings) for (const fl of b.fields || []) {
+    const id = `${fl.x},${fl.y}`, stage = fl.stage || 0; fseen.add(id); let e = R3.fmap.get(id);
+    if (!e || e.stage !== stage) { if (e) R3.world.remove(e.m);
+      const K = new Kit().box(0, 0, 0, .96, .05, .96, K3.ink).box(0, .01, 0, .86, .05, .86, stage >= 3 ? K3.thatch : K3.water);
+      for (let i = 0; i < 4 && stage > 0; i++) for (let j = 0; j < 4; j++) K.box(-.3 + i * .2, .05, -.3 + j * .2, .05, .08 + stage * .07, .05, stage >= 3 ? K3.thatch : K3.pine);
+      const m = new THREE.Mesh(K.geo(), R3.kitMat); m.position.set(fl.x + .5, 0, fl.y + .5); R3.world.add(m); R3.fmap.set(id, e = { m, stage }); }
+  }
+  for (const [id, e] of R3.fmap) if (!fseen.has(id)) { R3.world.remove(e.m); R3.fmap.delete(id); }
+}
+const FIG_OF = { spear: "spear", archer: "archer", samurai: "samurai", monk: "monk", ninja: "ninja", gunner: "gunner", kage: "kage", cavalry: "cavalry",
+  farmer: "farmer", cutter: "cutter", builder: "builder", oni: "oni", brute: "brute", kappa: "kappa", tengu: "tengu", ghost: "ghost", kitsune: "kitsune", gashadokuro: "gashadokuro" };
+const FIG_SCALE = .6;   // a soldier stands about 1.35 tiles tall (≈ the 2D sprites)
+function pxToTile(px, py) { return [(px / (TW / 2) + py / (TH / 2)) / 2 * .5, (py / (TH / 2) - px / (TW / 2)) / 2 * .5]; }
+function syncUnits(pose) {
+  const seen = new Set();
+  for (const u of S.units) {
+    if (u.dead) continue; seen.add(u.id);
+    let e = R3.umap.get(u.id);
+    if (!e) {
+      const g = new THREE.Group(), n = (SIZES[u.size || 1] || SIZES[1]).figs, offs = (SIZES[u.size || 1] || SIZES[1]).offs, figs = [];
+      for (let i = 0; i < n; i++) { const f = figure(FIG_OF[u.type] || "spear"), [ox, oz] = pxToTile(offs[i][0], offs[i][1]);
+        f.position.set(ox, 0, oz); f.scale.setScalar(FIG_SCALE * f.userData.scale); f.userData.ph = i * 1.7; g.add(f); figs.push(f); }
+      const pool = new THREE.Mesh(R3.poolGeo, R3.poolMat); pool.rotation.x = -Math.PI / 2; pool.position.y = .015; pool.scale.setScalar(.6 + (n - 1) * .25); g.add(pool);
+      R3.world.add(g); e = { g, figs, px: u.x, py: u.y, yaw: u.team === "E" ? -Math.PI * .75 : Math.PI / 4, phase: 0, mv: 0 }; R3.umap.set(u.id, e);
+    }
+    e.g.visible = !u.hidden;
+    if (!pose) continue;
+    const dx = u.x - e.px, dy = u.y - e.py, d = Math.hypot(dx, dy); e.px = u.x; e.py = u.y;
+    e.mv = d > .004 ? 1 : 0;
+    const tg = u.target && !u.target.dead ? u.target : null, atk = S.t - (u.atkT ?? -9) < .3;
+    if (atk && tg) { const tx = tg.tx !== undefined ? tg.tx + tg.w / 2 : tg.x, ty = tg.ty !== undefined ? tg.ty + tg.h / 2 : tg.y; e.yaw = Math.atan2(tx - u.x, ty - u.y); }
+    else if (d > .004) e.yaw = Math.atan2(dx, dy);
+    e.phase += e.mv ? .75 : .17;
+    e.g.position.set(u.x, 0, u.y);
+    for (const f of e.figs) {
+      const D = f.userData, ph = e.phase + D.ph, s = e.mv ? Math.sin(ph) : 0, idle = Math.sin(ph * .35) * .05;
+      let dyaw = e.yaw - f.rotation.y; dyaw = Math.atan2(Math.sin(dyaw), Math.cos(dyaw)); f.rotation.y += dyaw * .6;
+      D.legs.forEach((l, i) => l.rotation.x = (D.quad ? (i % 2 ? -s : s) * (i < 2 ? 1 : -1) : (i ? -s : s)) * .6);
+      if (D.armR) D.armR.rotation.x = (D.armR === D.weaponArm ? -s * .12 : -s * .45) + idle;
+      if (D.armL) D.armL.rotation.x = (D.armL === D.weaponArm ? s * .12 : s * .45) - idle;
+      if (atk && D.weaponArm) D.weaponArm.rotation.x = -1.1 + (S.t - u.atkT) * 3;   // thrust forward, recover
+      D.body.position.y = (e.mv ? Math.abs(Math.cos(ph)) * .06 : 0) + (D.float ? .25 + Math.sin(ph * .5) * .08 : 0);
+      if (S.t - (u.hitT ?? -9) < .15) D.body.position.x = Math.sin(S.t * 90) * .04; else D.body.position.x = 0;
+    }
+  }
+  for (const [id, e] of R3.umap) if (!seen.has(id)) { R3.world.remove(e.g); R3.umap.delete(id); }
+}
+
+/* ---------- camera: the 2D isometric projection, reproduced ---------- */
+const ISO_EL = Math.asin((TH / 2) / (TW / 2));
+function syncCamera() {
+  const c = R3.cam, k = (TW / 2) * Math.SQRT2 * cam.z;          // screen px per world unit
+  c.left = -vw / 2 / k; c.right = vw / 2 / k; c.top = vh / 2 / k; c.bottom = -vh / 2 / k; c.updateProjectionMatrix();
+  const t = unIso(cam.x, cam.y), D = 60;
+  c.position.set(t.x + Math.cos(ISO_EL) / Math.SQRT2 * D, Math.sin(ISO_EL) * D, t.y + Math.cos(ISO_EL) / Math.SQRT2 * D);
+  c.lookAt(t.x, 0, t.y); c.updateMatrixWorld();
+}
+
+/* ---------- health bars for the overlay (2D canvas draws them on top of the 3D world) ---------- */
+R3.bars = function () {
+  const k = (TW / 2) * Math.SQRT2 * cam.z * Math.cos(ISO_EL);   // screen px per world unit of height
+  for (const u of S.units) if (!u.dead && !u.hidden && u.hp < u.maxHp && !u.worker) {
+    const p = iso(u.x, u.y), s = toScreen(p.X, p.Y), big = ["oni", "brute", "gashadokuro", "tengu"].includes(u.type);
+    hpBar(s.x, s.y - (big ? 2.2 : 1.55) * k * FIG_SCALE / .6 - 6, u.hp / u.maxHp, u.team === "E", u.size > 1 ? 40 : 28); }
+  for (const b of S.buildings) if (b.hp < b.maxHp && b.progress >= 1 && b.type !== "keep") {
+    const e = R3.bmap.get(b.id), p = iso(b.tx + b.w / 2, b.ty + b.h / 2), s = toScreen(p.X, p.Y);
+    hpBar(s.x, s.y - (e ? e.h : 1) * k - 8, b.hp / b.maxHp, false, 44); }
+};
+
+/* ---------- setup and the ink pass ---------- */
+async function init3d() {
+  if (!USE3D || R3.loading) return; R3.loading = true;
+  try { THREE = await import("./vendor/three.module.js"); } catch (e) { console.error("3D renderer could not load; staying in 2D", e); return; }
+  THREE.ColorManagement.enabled = false;
+  const gl = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
+  gl.outputColorSpace = THREE.LinearSRGBColorSpace; R3.dpr = Math.min(window.devicePixelRatio || 1, 2); gl.setPixelRatio(R3.dpr);
+  Object.assign(gl.domElement.style, { position: "fixed", inset: "0", width: "100vw", height: "100dvh", pointerEvents: "none" });
+  gl.domElement.id = "c3d"; cv.parentNode.insertBefore(gl.domElement, cv); R3.gl = gl;
+  R3.scene = new THREE.Scene(); R3.cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 160);
+  const sun = new THREE.DirectionalLight(0xffffff, 1.25 * Math.PI); sun.position.set(-20, 30, 6); R3.scene.add(sun); R3.scene.add(new THREE.AmbientLight(0xffffff, .62 * Math.PI));
+  R3.kitMat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
+  R3.poolGeo = new THREE.CircleGeometry(.42, 18); R3.poolGeo.scale(1, .62, 1); R3.poolMat = new THREE.MeshBasicMaterial({ color: 0x8f8b84 });
+  R3.rt = new THREE.WebGLRenderTarget(1, 1, { depthBuffer: true }); R3.rt.depthTexture = new THREE.DepthTexture(1, 1); R3.rt.depthTexture.type = THREE.UnsignedIntType;
+  R3.quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
+    uniforms: { tColor: { value: R3.rt.texture }, tDepth: { value: R3.rt.depthTexture }, invPV: { value: new THREE.Matrix4() }, res: { value: new THREE.Vector2() },
+      time: { value: 0 }, night: { value: 0 }, MAPSZ: { value: 16 }, near: { value: 1 }, far: { value: 160 }, winter: { value: 0 }, raw: { value: /[?&]raw/.test(location.search) ? 1 : 0 } },
+    vertexShader: "varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0., 1.); }",
+    fragmentShader: `
+      precision highp float; varying vec2 vUv;
+      uniform sampler2D tColor, tDepth; uniform mat4 invPV; uniform vec2 res; uniform float time, night, MAPSZ, near, far, winter, raw;
+      const vec3 PAPER = vec3(.929,.894,.827), WASH = vec3(.62,.6,.57), WASH2 = vec3(.43,.42,.41), INK = vec3(.106,.106,.122), VERM = vec3(.784,.216,.176), COOL = vec3(.122,.149,.2);
+      float h21(vec2 p){ p = fract(p*vec2(123.34,456.21)); p += dot(p,p+45.32); return fract(p.x*p.y); }
+      float vn(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.-2.*f); return mix(mix(h21(i),h21(i+vec2(1,0)),f.x), mix(h21(i+vec2(0,1)),h21(i+vec2(1,1)),f.x), f.y); }
+      float fb(vec2 p){ float a=0., w=.5; for(int i=0;i<4;i++){ a+=vn(p)*w; p*=2.07; w*=.5; } return a; }
+      vec3 worldAt(vec2 uv, float d){ vec4 w = invPV * vec4(uv*2.-1., d*2.-1., 1.); return w.xyz / w.w; }
+      float lum(vec3 c){ return dot(c, vec3(.3,.59,.11)); }
+      float lin(float d){ return near + d * (far - near); }   // orthographic: depth is linear
+      vec3 inkTone(vec3 c, vec2 p){ float l = lum(c), n = fb(p*.9)*.12 - .06;
+        vec3 o = mix(INK, WASH2, smoothstep(.27+n, .33+n, l)); o = mix(o, WASH, smoothstep(.49+n, .55+n, l)); o = mix(o, PAPER, smoothstep(.73+n, .79+n, l));
+        float red = c.r - max(c.g, c.b); return mix(o, VERM, smoothstep(.25, .35, red)); }
+      void main(){
+        vec2 px = 1. / res; float d = texture2D(tDepth, vUv).x; vec3 c = texture2D(tColor, vUv).rgb; vec3 wp = worldAt(vUv, d); vec2 wq = wp.xz;
+        float j = 1. + vn(gl_FragCoord.xy*.08)*1.1; vec2 o1 = px*j;
+        float dl = lin(texture2D(tDepth, vUv-vec2(o1.x,0)).x), dr = lin(texture2D(tDepth, vUv+vec2(o1.x,0)).x), du = lin(texture2D(tDepth, vUv+vec2(0,o1.y)).x), dd = lin(texture2D(tDepth, vUv-vec2(0,o1.y)).x);
+        float cl = lum(texture2D(tColor, vUv-vec2(o1.x,0)).rgb), cr = lum(texture2D(tColor, vUv+vec2(o1.x,0)).rgb), cu = lum(texture2D(tColor, vUv+vec2(0,o1.y)).rgb), cd = lum(texture2D(tColor, vUv-vec2(0,o1.y)).rgb);
+        float d0 = lin(d); float edge = smoothstep(.12, .35, max(abs(dl+dr-2.*d0), abs(du+dd-2.*d0))) + smoothstep(.12, .24, max(abs(cl-cr), abs(cu-cd)));   // creases, not slopes
+        edge = clamp(edge, 0., 1.) * smoothstep(.2, .55, vn(gl_FragCoord.xy*.035)+.3);
+        vec3 real = mix(inkTone(c, wq*1.3), INK, edge*.9);
+        // beyond the map: the land is painted, not drawn
+        float beyond = max(max(-wq.x, -wq.y), max(wq.x - MAPSZ, wq.y - MAPSZ)) + (fb(wq*.35)-.5)*2.2;
+        float k = smoothstep(.2, 1.6, beyond);
+        vec3 cb = vec3(0.); for (int i=-1;i<=1;i++) for (int m=-1;m<=1;m++) cb += texture2D(tColor, vUv + vec2(float(i),float(m))*px*5.).rgb; cb /= 9.;
+        float pl = lum(cb) + (fb(wq*.3 + vec2(time*.01,0.))-.5)*.35;
+        vec3 paint = mix(WASH2, PAPER, smoothstep(.42, .72, pl)); paint = mix(paint, WASH, smoothstep(.55,.9, fb(wq*.1+3.))*.45);
+        float mist = smoothstep(.45, .8, fb(wq*.07 + vec2(time*.012, time*.005))); paint = mix(paint, PAPER, mist*.6);
+        vec3 col = mix(real, paint, k);
+        col = mix(col, mix(col, vec3(.97,.97,.99), .35), winter);
+        col = mix(col, col * mix(vec3(1.), COOL*2.2, .75), night);
+        float grain = .93 + .07*vn(gl_FragCoord.xy*.6) + .03*vn(gl_FragCoord.xy*.05);
+        gl_FragColor = vec4(col * grain, 1.);
+        if (raw > .5) gl_FragColor = vec4(c, 1.);
+      }`, depthTest: false, depthWrite: false }));
+  R3.quad.frustumCulled = false; R3.post = new THREE.Scene(); R3.post.add(R3.quad); R3.postCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  R3.ready = true;
+}
+function render3d() {
+  if (!r3on()) return;
+  const now = performance.now(), dt = Math.min(.1, (now - (R3.last || now)) / 1000); R3.last = now;
+  if (R3.S !== S) buildWorld();
+  const W = Math.round(vw * R3.dpr), H = Math.round(vh * R3.dpr);
+  if (R3.w !== W || R3.h !== H) { R3.w = W; R3.h = H; R3.gl.setSize(vw, vh); R3.rt.setSize(W, H); R3.quad.material.uniforms.res.value.set(W, H); }
+  syncBuildings();
+  R3.poseAcc += dt; const pose = R3.poseAcc >= 1 / 12; if (pose) R3.poseAcc %= 1 / 12;   // poses on twos
+  syncUnits(pose || !R3.posed); R3.posed = true;
+  syncCamera();
+  const U = R3.quad.material.uniforms; U.time.value = now / 1000; U.night.value = S.nightAmt || 0; U.MAPSZ.value = MAP; U.winter.value = season().name === "Winter" ? 1 : 0;
+  U.near.value = R3.cam.near; U.far.value = R3.cam.far;
+  U.invPV.value.multiplyMatrices(R3.cam.projectionMatrix, R3.cam.matrixWorldInverse).invert();
+  R3.gl.setClearColor(0xEDE4D3, 1); R3.gl.setRenderTarget(R3.rt); R3.gl.render(R3.scene, R3.cam);
+  R3.gl.setRenderTarget(null); R3.gl.render(R3.post, R3.postCam);
+}
+if (USE3D) init3d();
+/* =========================================================================
    INPUT — drag pans, pinch zooms, tap selects/orders, long-press drags a
    selection box, double-tap selects all of a kind, drag moves a build preview.
    ========================================================================= */
@@ -3114,7 +3618,7 @@ $("bar").addEventListener("click", e => {
    ========================================================================= */
 let paused = false, running = false, acc = 0, lastT = 0, uiT = 0, hitStop = 0;
 function safeRender() {   // a drawing error must never leave the canvas stuck in a half-saved state (blank map)
-  try { render(); } catch (e) { if (!safeRender.n) console.error(e); safeRender.n = (safeRender.n || 0) + 1;
+  try { if (r3on()) render3d(); render(); } catch (e) { if (!safeRender.n) console.error(e); safeRender.n = (safeRender.n || 0) + 1;
     const w = cv.width; cv.width = w; resize(); }
 }
 function frame(now) {
