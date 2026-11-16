@@ -95,14 +95,14 @@ function standIn(type) {
   } else { const b = new THREE.Mesh(new THREE.BoxGeometry(1.5, .8, 1.3), wallMat); b.position.y = .4; g.add(b); const r = roof(1.5, 1.3, 1.3); r.position.y = 1.4; g.add(r); }
   return g;
 }
-const SITES = [["keep", -2.6, -2.6, 0], ["dojo", 4.2, 4.2, 0], ["house", 3.4, -2.4, -.4], ["house", 5.8, .6, .9], ["house", -2.2, 3.6, .2]];
+const SITES = [["keep", -3.2, -3.2, 0], ["dojo", 4.8, 4.8, 0], ["house", 3.6, -2.6, -.4], ["house", 6.4, .8, .9], ["house", -2.6, 3.8, .2]];
 const loader = new GLTFLoader();
 for (const [type, x, z, rot] of SITES) {
   const site = new THREE.Group(); site.position.set(x, height(x, z), z); site.rotation.y = rot; scene.add(site);
   const placeholder = standIn(type); site.add(placeholder);
   loader.load(`models/${type}.glb`, gl => {   // fit the Tripo model to the stand-in's footprint, sit it on the ground
     const m = gl.scene, box = new THREE.Box3().setFromObject(m), size = box.getSize(new THREE.Vector3());
-    const target = type === "keep" ? 6.4 : type === "dojo" ? 5 : 2.8, s = target / Math.max(size.x, size.z);
+    const target = type === "keep" ? 6.4 : type === "dojo" ? 4.4 : 2.8, s = target / Math.max(size.x, size.z);
     m.scale.setScalar(s); m.position.set(-(box.min.x + size.x / 2) * s, -box.min.y * s, -(box.min.z + size.z / 2) * s);
     m.traverse(o => { if (o.isMesh) { const map = o.material.map, vc = !!o.geometry.attributes.color;
       o.material = new THREE.MeshLambertMaterial({ map, vertexColors: vc, color: map || vc ? 0xffffff : 0xdddddd, side: THREE.DoubleSide }); } });
@@ -113,16 +113,20 @@ for (const [type, x, z, rot] of SITES) {
 // ---------- units: the approved graphic-style cutouts, standing upright in the world ----------
 const unitScene = new THREE.Scene(), tl = new THREE.TextureLoader();
 const UNITS = { spr: ["mj_spr4", .471], arc: ["mj_arcF", .461], sam: ["mj_samF", .429], mnk: ["mj_mnk9", .665], nin: ["mj_ninF", .557], tep: ["mj_tepF", .411] };
-const units = [];
+const units = [], POOL_GEO = new THREE.CircleGeometry(.42, 20), POOL_MAT = new THREE.MeshBasicMaterial({ color: 0x8a8782 });
+POOL_GEO.scale(1, .62, 1);
 function addUnit(kind, x, z, scout) {
-  const [id, piv] = UNITS[kind], tex = tl.load(`assets/${id}.webp`, t => { const h = 1.55, w = h * t.image.width / t.image.height; sp.scale.set(w, h, 1); sp.userData.w = w; });
+  const [id, piv] = UNITS[kind], tex = tl.load(`assets/${id}.webp`, t => { const h = 1.95, w = h * t.image.width / t.image.height; sp.scale.set(w, h, 1); sp.userData.w = w; });
   tex.magFilter = THREE.LinearFilter;
   const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, alphaTest: .5 })); sp.center.set(piv, 0);
   sp.position.set(x, height(x, z), z); unitScene.add(sp);
+  const pool = new THREE.Mesh(POOL_GEO, POOL_MAT); pool.rotation.x = -Math.PI / 2; scene.add(pool); sp.userData.pool = pool;
   const u = { sp, x, z, tx: x, tz: z, wait: Math.random() * 3, scout, home: [x, z] }; units.push(u); return u;
 }
-[["spr", 1.2, .4], ["spr", 1.9, .9], ["arc", -.4, 1.6], ["sam", .6, 1.9], ["mnk", 2.4, -.6], ["tep", -.8, .2]].forEach(a => addUnit(...a));
+[["spr", .2, 1.0], ["spr", 2.5, .4], ["arc", .5, 2.4], ["sam", 2.3, 2.1], ["mnk", -.7, 2.7], ["tep", 3.0, -.7]].forEach(a => addUnit(...a));
 const scout = addUnit("nin", -1, 4.5, true);
+function placePools() { for (const u of units) u.sp.userData.pool.position.set(u.x, height(u.x, u.z) + .03, u.z); }
+placePools();
 
 // ---------- the 3D spearman: real model, inked like the buildings, animated on twos ----------
 const actors = [];
@@ -131,7 +135,10 @@ function addActor(file, path, height) {
     const root = gl.scene, box = new THREE.Box3().setFromObject(root), s = height / (box.max.y - box.min.y);
     root.scale.setScalar(s);
     root.traverse(o => { if (o.isMesh) { const map = o.material.map, vc = !!o.geometry.attributes.color;
-      o.material = new THREE.MeshLambertMaterial({ map, vertexColors: vc, color: map || vc ? 0xffffff : 0xdddddd, side: THREE.DoubleSide }); o.frustumCulled = false; } });
+      o.material = new THREE.MeshLambertMaterial({ map, vertexColors: vc, color: map || vc ? 0xffffff : 0xdddddd, side: THREE.DoubleSide });
+      o.material.onBeforeCompile = sh => { sh.fragmentShader = sh.fragmentShader.replace('#include <opaque_fragment>',
+        'float rim = pow(clamp(1.0 - abs(normalize(normal).z), 0.0, 1.0), 2.2); outgoingLight = mix(outgoingLight, vec3(.95,.92,.86), smoothstep(.35,.75,rim) * .85);\n#include <opaque_fragment>'); };
+      o.frustumCulled = false; } });
     const holder = new THREE.Group(); holder.add(root); scene.add(holder);
     const mixer = new THREE.AnimationMixer(root), clips = gl.animations;
     const pick = re => clips.find(c => re.test(c.name));
@@ -140,7 +147,7 @@ function addActor(file, path, height) {
     actors.push({ holder, mixer, path, t: Math.random(), speed: walk ? 1.1 : 0 });
   }, undefined, () => {});
 }
-addActor("spearman.glb", [[-1.2, 2.6], [2.6, 2.2], [2.2, -1.2], [-1.6, -.4]], 1.7);
+addActor("spearman.glb", [[1.4, 3.0], [3.2, 1.4], [1.4, -.2], [-.4, 1.4]], 2.1);
 function stepActors(st) {
   for (const a of actors) {
     a.mixer.update(st);
@@ -153,8 +160,8 @@ function stepActors(st) {
 }
 
 // ---------- camera: orthographic isometric, portrait ----------
-const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, -200, 400), target = new THREE.Vector3(0, 0, 1);
-let zoom = 1;
+const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, -200, 400), target = new THREE.Vector3(.6, 0, .6);
+let zoom = 1.3;
 const AZ = Math.PI / 4, EL = THREE.MathUtils.degToRad(33);
 function placeCam() { const vh = 26 / zoom, a = innerWidth / innerHeight; cam.top = vh / 2; cam.bottom = -vh / 2; cam.left = -vh * a / 2; cam.right = vh * a / 2; cam.updateProjectionMatrix();
   cam.position.set(target.x + Math.cos(EL) * Math.sin(AZ) * 80, target.y + Math.sin(EL) * 80, target.z + Math.cos(EL) * Math.cos(AZ) * 80); cam.lookAt(target); cam.updateMatrixWorld(); }
@@ -266,7 +273,7 @@ function frame(now) {
   night += (nightTo - night) * Math.min(1, dt * 1.5);
   if (stepAcc >= 1 / 12) { const st = stepAcc; stepAcc = 0;
     for (const u of units) {
-      if (u.wait > 0) { u.wait -= st; if (u.wait <= 0 && !u.scout) { u.tx = u.home[0] + (Math.random() - .5) * 4; u.tz = u.home[1] + (Math.random() - .5) * 4; } continue; }
+      if (u.wait > 0) { u.wait -= st; if (u.wait <= 0 && !u.scout) { u.tx = u.home[0] + (Math.random() - .5) * .5; u.tz = u.home[1] + (Math.random() - .5) * .5; } continue; }
       const dx = u.tx - u.x, dz = u.tz - u.z, dist = Math.hypot(dx, dz), sp = (u.scout ? 3.2 : 1.2) * st;
       if (dist < .05) { u.wait = u.scout ? 1e9 : 1 + Math.random() * 3; continue; }
       u.x += dx / dist * Math.min(sp, dist); u.z += dz / dist * Math.min(sp, dist);
@@ -274,7 +281,7 @@ function frame(now) {
       u.sp.position.set(u.x, height(u.x, u.z) + (Math.floor(now / 160) % 2 ? .04 : 0), u.z);
       reveal(tg, u.x, u.z, u.scout ? 6.5 : 4.5);
     }
-    stepActors(st);
+    stepActors(st); placePools();
     sg.globalAlpha = .07; sg.drawImage(target2d, 0, 0); sg.globalAlpha = 1; revealTex.needsUpdate = true;   // seen land soaks in over about a second
   }
   const U = quad.material.uniforms; U.time.value = now / 1000; U.night.value = night;
