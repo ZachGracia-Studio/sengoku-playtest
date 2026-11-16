@@ -15,7 +15,7 @@
 <script type="importmap">{ "imports": { "three": "./vendor/three.module.js", "three/addons/": "./vendor/jsm/" } }</script>
 </head>
 <body>
-<div id="note">3D look test v3 · drag to look around · tap the ground to send the scout · pinch to zoom</div>
+<div id="note">3D look test v4 · drag to look around · tap the ground to send the scout · pinch to zoom</div>
 <div id="ui">
   <button id="bNight">Night</button>
   <button id="bFog" class="on">Fog</button>
@@ -147,16 +147,12 @@ function soldier(kind) {
   }
   if (kind === "mnk") { mesh(B(.32, .34, .32), C.paper, 0, .15, -.02, head); mesh(B(.2, .05, .02), C.ink, 0, .17, .15, head); }   // white cowl, eye slit
   if (kind === "nin") { mesh(B(.27, .3, .27), C.ink, 0, .14, -.01, head); mesh(B(.18, .06, .02), C.paper, 0, .15, .13, head); }    // dark hood, eye slit
-  if (kind !== "nin" && kind !== "mnk") {                                                 // sashimono: the Tsuru vermilion on every clan soldier
-    mesh(CY(.016, .016, 1.3, 4), C.wood, 0, top + .35, -.2, body);
-    mesh(B(.02, .3, .18), C.verm, 0, top + .8, -.2 - .09, body, 0, Math.PI / 2, 0);
-  }
-  if (kind === "spr") { const sp = mesh(CY(.022, .022, 2.9, 4), C.wood, 0, -.15, .05, armR, .08); mesh(CO(.05, .26, 4), C.paper, 0, 1.55, 0, sp); }
-  if (kind === "arc") { mesh(new THREE.TorusGeometry(.78, .028, 4, 14, Math.PI * .85), C.ink, .02, -.45, .08, armL, 0, Math.PI / 2, Math.PI / 2 + Math.PI * .075);
+  if (kind === "spr") { const sp = mesh(CY(.03, .03, 2.9, 4), C.verm, 0, -.15, .05, armR, .08); mesh(CO(.055, .28, 4), C.paper, 0, 1.56, 0, sp); }   // vermilion-lacquered yari
+  if (kind === "arc") { mesh(new THREE.TorusGeometry(.78, .036, 4, 14, Math.PI * .85), C.verm, .02, -.45, .08, armL, 0, Math.PI / 2, Math.PI / 2 + Math.PI * .075);
     const q = mesh(CY(.07, .07, .55, 6), C.plate, .12, top - .05, -.2, body, -.35); for (const dx of [-.03, .03]) mesh(B(.02, .2, .02), C.paper, dx, .32, 0, q); }
-  if (kind === "sam") { mesh(B(.04, .04, .9), C.ink, .24, hip + .3, .12, body, .5, .3); }   // sword at the hip
-  if (kind === "mnk") { const n = mesh(CY(.022, .022, 2.4, 4), C.wood, 0, -.2, .05, armR, .12); mesh(B(.05, .5, .1), C.paper, 0, 1.38, .06, n, .3); }   // naginata
-  if (kind === "nin") { mesh(B(.04, .7, .05), C.ink, .1, top + .05, -.2, body, 0, 0, .7); body.rotation.x = .18; }   // short sword on the back, a forward crouch
+  if (kind === "sam") { mesh(B(.06, .06, .9), C.verm, .24, hip + .3, .12, body, .5, .3); mesh(B(.07, .07, .22), C.ink, .24, hip + .52, .5, body, .5, .3); }   // red scabbard, dark hilt
+  if (kind === "mnk") { const n = mesh(CY(.03, .03, 2.4, 4), C.verm, 0, -.2, .05, armR, .12); mesh(B(.05, .5, .1), C.paper, 0, 1.38, .06, n, .3); }   // naginata
+  if (kind === "nin") { mesh(B(.06, .55, .06), C.verm, .1, top + .02, -.2, body, 0, 0, .7); mesh(B(.07, .18, .07), C.ink, -.1, top + .3, -.2, body, 0, 0, .7); body.rotation.x = .18; }   // short sword on the back, a forward crouch
   root.userData = { body, legs, armR, armL, weaponArm: ["spr", "mnk"].includes(kind) ? armR : kind === "arc" ? armL : null };
   root.scale.setScalar(.95); return root;
 }
