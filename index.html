@@ -1018,7 +1018,7 @@ const advisor = {
     if (strip) this.hideT = S.t + Math.max(3.5, m.text.length / 22);
     $("advImg").src = ADV_FACE[m.face] || (m.urgent ? ADV_FACE.urgent : ADV_FACE.speaking);
     $("advWho").textContent = m.who || "Elder of the Tsuru clan"; $("advText").textContent = m.text;
-    if (m.pic) $("advPic").src = m.pic;
+    if (m.pic) $("advPic").src = srcOf(m.pic);
     const btns = m.buttons || [{ label: "Understood" }];
     $("advBtns").innerHTML = btns.map((b, i) => `<button data-i="${i}" class="${i === 0 && m.buttons ? "go" : ""}">${b.label}</button>`).join("");
     $("advBtns").querySelectorAll("button").forEach(b => b.onclick = () => { const f = btns[+b.dataset.i].fn; if (f) f(); this.close(); });
@@ -1075,7 +1075,7 @@ function dawnEvent() {
   if (CH.tutorial || CH.sandbox || S.day < 2 || rnd() > .5) return;
   const pool = EVENTS.filter(e => e.when() && !S.tips["ev_" + e.id]); if (!pool.length) return;
   const e = pool[Math.floor(rnd() * pool.length)]; S.tips["ev_" + e.id] = 1;
-  advisor.queue.unshift({ text: e.text, pic: srcOf(e.pic), buttons: e.buttons(), face: EV_FACE[e.id] || "speaking" });
+  advisor.queue.unshift({ text: e.text, pic: e.pic, buttons: e.buttons(), face: EV_FACE[e.id] || "speaking" });
 }
 const woodOf = d => d.wood || 0;
 const upWood = t => t.wood ?? Math.round((t.cost || 0) * .4);
@@ -1346,6 +1346,10 @@ function smooth(sx, sy, pts) {
 }
 function repathAll() { for (const u of S.units) u.path = null; }
 
+/* ---------- weather and palisade lookups (game state the renderer and UI read) ---------- */
+const WX_NAMES = { snow: "Snow", clear: "Clear", rain: "Rain", wind: "Wind E", mist: "Mist" };
+const wxNow = () => { const L = season().name === "Winter" ? ["snow"] : (CH.weather || ["clear"]); return { kind: L[S.wx.i % L.length], next: L[(S.wx.i + 1) % L.length], left: S.wx.dur - S.wx.t }; };
+function palAt(x, y) { const o = S.occ[y] && S.occ[y][x]; return !!(o && o.type && BUILDINGS[o.type].palisade); }
 /* =========================================================================
    SIMULATION (fixed step)
    ========================================================================= */
@@ -1379,12 +1383,9 @@ function beginNight() {
   S.firstKill = false; frameWave();
   ui.banner(`NIGHT ${S.night}`, S.night === CH.nights ? "the final night" : "the yokai come");
 }
-function frameWave() {   // pan (and if needed pull back) so the first group and the keep are both in view
-  const q = S.spawnQueue[0], k = keep(); if (!q || !k || typeof vw === "undefined") return;
-  const a = iso(q.x, q.y), b = iso(k.tx + 1.5, k.ty + 1.5);
-  cam.goal = { x: (a.X + b.X) / 2, y: (a.Y + b.Y) / 2 + 10 };
-  const need = Math.max(Math.abs(a.X - b.X) / (vw * .8), Math.abs(a.Y - b.Y) / Math.max(120, vh - 300));
-  if (need * cam.z > 1) cam.tz = Math.max(zoomLevels()[0], 1 / need);
+function frameWave() {   // ask the view to show the first group and the keep together (the sim never moves the camera itself)
+  const q = S.spawnQueue[0], k = keep(); if (!q || !k) return;
+  S.camAsk = { frame: [[q.x, q.y], [k.tx + 1.5, k.ty + 1.5]] };
 }
 function logNight() {   // one line per night for the playtest report: night, seconds, yokai killed, soldiers lost
   const L = S.nightLog; if (!L) return; S.nightLog = null;
@@ -1733,14 +1734,40 @@ function stepProjectiles() {
 function addDecal(x, y, s) { S.decals.push({ x, y, s, t: S.t, rot: rnd() * 6.28, kind: rnd() < .5 ? "fx_splat" : "fx_sparse" }); }
 
 /* =========================================================================
-   RENDER
+   ASSETS — load every picture once (atlas sheets cut back into canvases). Shared by the
+   map renderer and the DOM UI; the Midjourney art stays the UI layer in 2D and 3D alike.
    ========================================================================= */
-const cv = document.getElementById("c"), ctx = cv.getContext("2d");
-const IMG = {}, NIGHT_IMG = {}, TINT = {};
+const IMG = {};   // every loaded picture by asset id (the UI uses these whatever draws the map)
+// Sprites ship packed into atlas sheets (assets/atlas.json maps each file to a rectangle).
+// Each packed sprite is cut back out into its own canvas, so the rest of the game is unchanged.
+const URLS = {};
+const srcOf = id => { const a = ASSETS[id]; if (!a) return ""; const im = IMG[id];
+  if (im && im.toDataURL) return URLS[id] || (URLS[id] = im.toDataURL("image/webp")); return a.src; };
+const blank = () => { const c = document.createElement("canvas"); c.width = c.height = 2; return c; };
+const loadImg = src => new Promise(res => { const im = new Image(); im.decoding = "async"; im.onload = () => res(im); im.onerror = () => res(null); im.src = src; });
+async function loadImages() {
+  let atlas = {};
+  try { const r = await fetch("assets/atlas.json"); if (r.ok) atlas = await r.json(); } catch (e) {}
+  const all = Object.entries(ASSETS), sheets = {}; let n = 0;
+  const tick = () => { n++; document.getElementById("lFill").style.width = `${Math.round(n / all.length * 100)}%`; };
+  await Promise.all([...new Set(Object.values(atlas).map(v => v[0]))].map(async f => { sheets[f] = await loadImg(f); }));
+  const packed = all.filter(([, a]) => atlas[a.src] && sheets[atlas[a.src][0]]);
+  for (const [id, a] of packed) { const [f, x, y, w, h] = atlas[a.src], c = document.createElement("canvas"); c.width = w; c.height = h;
+    c.getContext("2d").drawImage(sheets[f], x, y, w, h, 0, 0, w, h); IMG[id] = c; tick(); }
+  return Promise.all(all.filter(([id]) => !IMG[id]).map(([id, a]) => new Promise((res, rej) => {
+    const im = new Image(); im.decoding = "async";
+    im.onload = () => { IMG[id] = im; tick(); res(); }; im.onerror = () => {   // a missing file must never block the game: stand in a blank 2x2 canvas
+      console.warn("missing asset", id); const c = document.createElement("canvas"); c.width = c.height = 2; IMG[id] = c; tick(); res(); }; im.src = a.src;
+  })));
+}
+/* =========================================================================
+   VIEW — the camera contract. Input, UI and the loop talk to the map only through
+   these: cam, vw/vh, resize, toScreen, toWorldIso, screenToTile, clampCam, zoom*,
+   followCamAsk. A 3D renderer keeps these names and meanings (see 05_TECH_AND_PIPELINE).
+   ========================================================================= */
+const cv = document.getElementById("c");   // the map surface: input listens here; the renderer draws into it
 let vw = 0, vh = 0, dpr = 1;
 const cam = { x: 0, y: 0, z: 1 };
-let terrain = null, terrainNight = null;
-const TERR = { pad: 240, scale: 1.5 };
 let dev = /[?&#]dev/.test(location.href);
 const perf = { fps: 0, frames: 0, last: 0, simMs: 0, drawMs: 0 };
 
@@ -1770,28 +1797,23 @@ function zoomStep(dir) {
 }
 function defaultZoom() { return clamp((vh - 230) / (MAP * TH) * .95, .62, 1.15); }   // phone: ~10 tiles across at start
 
-// Sprites ship packed into atlas sheets (assets/atlas.json maps each file to a rectangle).
-// Each packed sprite is cut back out into its own canvas, so the rest of the game is unchanged.
-const URLS = {};
-const srcOf = id => { const a = ASSETS[id]; if (!a) return ""; const im = IMG[id];
-  if (im && im.toDataURL) return URLS[id] || (URLS[id] = im.toDataURL("image/webp")); return a.src; };
-const blank = () => { const c = document.createElement("canvas"); c.width = c.height = 2; return c; };
-const loadImg = src => new Promise(res => { const im = new Image(); im.decoding = "async"; im.onload = () => res(im); im.onerror = () => res(null); im.src = src; });
-async function loadImages() {
-  let atlas = {};
-  try { const r = await fetch("assets/atlas.json"); if (r.ok) atlas = await r.json(); } catch (e) {}
-  const all = Object.entries(ASSETS), sheets = {}; let n = 0;
-  const tick = () => { n++; document.getElementById("lFill").style.width = `${Math.round(n / all.length * 100)}%`; };
-  await Promise.all([...new Set(Object.values(atlas).map(v => v[0]))].map(async f => { sheets[f] = await loadImg(f); }));
-  const packed = all.filter(([, a]) => atlas[a.src] && sheets[atlas[a.src][0]]);
-  for (const [id, a] of packed) { const [f, x, y, w, h] = atlas[a.src], c = document.createElement("canvas"); c.width = w; c.height = h;
-    c.getContext("2d").drawImage(sheets[f], x, y, w, h, 0, 0, w, h); IMG[id] = c; tick(); }
-  return Promise.all(all.filter(([id]) => !IMG[id]).map(([id, a]) => new Promise((res, rej) => {
-    const im = new Image(); im.decoding = "async";
-    im.onload = () => { IMG[id] = im; tick(); res(); }; im.onerror = () => {   // a missing file must never block the game: stand in a blank 2x2 canvas
-      console.warn("missing asset", id); const c = document.createElement("canvas"); c.width = c.height = 2; IMG[id] = c; tick(); res(); }; im.src = a.src;
-  })));
+// the simulation leaves camera requests in S.camAsk; the view acts on them once per frame
+function followCamAsk() {
+  const ask = S && S.camAsk; if (!ask) return; S.camAsk = null;
+  if (ask.frame) {   // pan (and if needed pull back) so both tile points are in view
+    const [[ax, ay], [bx, by]] = ask.frame, a = iso(ax, ay), b = iso(bx, by);
+    cam.goal = { x: (a.X + b.X) / 2, y: (a.Y + b.Y) / 2 + 10 };
+    const need = Math.max(Math.abs(a.X - b.X) / (vw * .8), Math.abs(a.Y - b.Y) / Math.max(120, vh - 300));
+    if (need * cam.z > 1) cam.tz = Math.max(zoomLevels()[0], 1 / need);
+  }
 }
+/* =========================================================================
+   RENDER
+   ========================================================================= */
+const ctx = cv.getContext("2d");
+const NIGHT_IMG = {}, TINT = {};
+let terrain = null, terrainNight = null;
+const TERR = { pad: 240, scale: 1.5 };
 function tinted(im, color, alpha = 1) {
   const c = document.createElement("canvas"); c.width = im.width; c.height = im.height;
   const g = c.getContext("2d"); g.drawImage(im, 0, 0); g.globalCompositeOperation = "source-atop";
@@ -2182,8 +2204,6 @@ function render() {
 }
 
 // weather is atmosphere only: it never changes the map or the rules
-const WX_NAMES = { snow: "Snow", clear: "Clear", rain: "Rain", wind: "Wind E", mist: "Mist" };
-const wxNow = () => { const L = season().name === "Winter" ? ["snow"] : (CH.weather || ["clear"]); return { kind: L[S.wx.i % L.length], next: L[(S.wx.i + 1) % L.length], left: S.wx.dur - S.wx.t }; };
 const DROPS = Array.from({ length: 140 }, (_, i) => ({ x: (i * 97.13) % 1, y: (i * 61.7) % 1, s: .7 + ((i * 13.1) % 1) * .6 }));
 function drawWeather(na) {
   const w = wxNow(), t = S.t;
@@ -2285,7 +2305,6 @@ function drawIsoBuilding(b, d, na) {
 // palisade: straight pieces run up-right on screen (along the y axis); mirrored for the x axis.
 // The corner piece is the apex where walls leave toward +x and +y.
 const PAL_K = .27;   // world px per image px — about one tile per straight piece
-function palAt(x, y) { const o = S.occ[y] && S.occ[y][x]; return !!(o && o.type && BUILDINGS[o.type].palisade); }
 function drawPalPiece(id, X, Y, ax, ay, mirror, alpha, na, shake) {
   const im = IMG[id], w = im.width * PAL_K * cam.z, h = im.height * PAL_K * cam.z, s = toScreen(X, Y);
   for (const [src, a] of [[im, alpha], [NIGHT_IMG[id], na * alpha]]) {
@@ -3109,6 +3128,7 @@ function frame(now) {
     if (n === 8) acc = 0;
     perf.simMs = performance.now() - s0;
   }
+  followCamAsk();
   if (cam.goal) { cam.x += (cam.goal.x - cam.x) * .07; cam.y += (cam.goal.y - cam.y) * .07; clampCam(); if (Math.abs(cam.goal.x - cam.x) + Math.abs(cam.goal.y - cam.y) < 2) cam.goal = null; }
   if (cam.tz) { cam.z += (cam.tz - cam.z) * .22; if (Math.abs(cam.tz - cam.z) < .004) { cam.z = cam.tz; cam.tz = 0; } clampCam(); }
   safeRender();
