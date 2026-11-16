@@ -15,7 +15,7 @@
 <script type="importmap">{ "imports": { "three": "./vendor/three.module.js", "three/addons/": "./vendor/jsm/" } }</script>
 </head>
 <body>
-<div id="note">3D look test · drag to look around · tap the ground to send the scout · pinch to zoom</div>
+<div id="note">3D look test v3 · drag to look around · tap the ground to send the scout · pinch to zoom</div>
 <div id="ui">
   <button id="bNight">Night</button>
   <button id="bFog" class="on">Fog</button>
@@ -110,53 +110,95 @@ for (const [type, x, z, rot] of SITES) {
   }, undefined, () => {});
 }
 
-// ---------- units: the approved graphic-style cutouts, standing upright in the world ----------
+// ---------- units: soldiers built from basic shapes, one flat value per part (?units=2d shows the old cutouts) ----------
+const UNITS2D = /units=2d/.test(location.search), FACE_CAM = Math.PI / 4;
 const unitScene = new THREE.Scene(), tl = new THREE.TextureLoader();
 const UNITS = { spr: ["mj_spr4", .471], arc: ["mj_arcF", .461], sam: ["mj_samF", .429], mnk: ["mj_mnk9", .665], nin: ["mj_ninF", .557], tep: ["mj_tepF", .411] };
 const units = [], POOL_GEO = new THREE.CircleGeometry(.42, 20), POOL_MAT = new THREE.MeshBasicMaterial({ color: 0x8a8782 });
 POOL_GEO.scale(1, .62, 1);
-function addUnit(kind, x, z, scout) {
-  const [id, piv] = UNITS[kind], tex = tl.load(`assets/${id}.webp`, t => { const h = 1.95, w = h * t.image.width / t.image.height; sp.scale.set(w, h, 1); sp.userData.w = w; });
-  tex.magFilter = THREE.LinearFilter;
-  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, alphaTest: .5 })); sp.center.set(piv, 0);
-  sp.position.set(x, height(x, z), z); unitScene.add(sp);
-  const pool = new THREE.Mesh(POOL_GEO, POOL_MAT); pool.rotation.x = -Math.PI / 2; scene.add(pool); sp.userData.pool = pool;
-  const u = { sp, x, z, tx: x, tz: z, wait: Math.random() * 3, scout, home: [x, z] }; units.push(u); return u;
+const M = {}; const mat = hex => M[hex] || (M[hex] = new THREE.MeshLambertMaterial({ color: hex, flatShading: true }));
+const C = { ink: 0x1d1d21, plate: 0x5a5a5a, paper: 0xefe9dd, wood: 0x3b3b3b, robe: 0x6e6e6e, verm: 0xC8372D };
+function mesh(geo, hex, x, y, z, parent, rx = 0, ry = 0, rz = 0) { const m = new THREE.Mesh(geo, mat(hex)); m.position.set(x, y, z); m.rotation.set(rx, ry, rz); parent.add(m); return m; }
+const B = (w, h, d) => new THREE.BoxGeometry(w, h, d), CY = (rt, rb, h, n = 6, open = false) => new THREE.CylinderGeometry(rt, rb, h, n, 1, open), CO = (r, h, n = 8) => new THREE.ConeGeometry(r, h, n);
+function limb(parent, x, y, len, w, hex, end) {          // a limb that swings from its top joint
+  const g = new THREE.Group(); g.position.set(x, y, 0); parent.add(g);
+  mesh(B(w, len, w * 1.1), hex, 0, -len / 2, 0, g); if (end) mesh(B(w * .9, w * .8, w * .9), end, 0, -len - w * .3, 0, g); return g;
 }
-[["spr", .2, 1.0], ["spr", 2.5, .4], ["arc", .5, 2.4], ["sam", 2.3, 2.1], ["mnk", -.7, 2.7], ["tep", 3.0, -.7]].forEach(a => addUnit(...a));
+function soldier(kind) {
+  const root = new THREE.Group(), body = new THREE.Group(); root.add(body);
+  const wide = kind === "sam" ? 1.15 : kind === "nin" ? .9 : 1, hip = kind === "nin" ? .55 : .62;
+  const legHex = kind === "nin" ? C.robe : C.paper;               // white leggings are the light shape at the feet
+  const legs = kind === "mnk" ? [] : [limb(body, -.1, hip, hip, .15, legHex, C.ink), limb(body, .1, hip, hip, .15, legHex, C.ink)];
+  const torsoHex = kind === "nin" ? C.robe : C.ink, top = hip + .78;
+  if (kind === "mnk") mesh(CY(.24, .44, 1.0, 7), C.ink, 0, .5, 0, body);                 // long dark robe to the ground
+  else mesh(CY(.24 * wide, .36 * wide, .36, 6), kind === "nin" ? C.robe : C.plate, 0, hip + .14, 0, body);   // armour skirt
+  mesh(B(.5 * wide, .46, .32), torsoHex, 0, hip + .55, 0, body);
+  if (kind !== "nin" && kind !== "mnk") for (const sx of [-1, 1]) mesh(B(.17, .24, .32 * wide), C.plate, sx * .33 * wide, top - .14, 0, body, 0, 0, sx * .18);   // shoulder plates
+  const armHex = kind === "nin" ? C.robe : C.ink;
+  const armR = limb(body, -.31 * wide, top - .06, .5, .12, armHex, C.paper), armL = limb(body, .31 * wide, top - .06, .5, .12, armHex, C.paper);
+  const head = new THREE.Group(); head.position.y = top; body.add(head);
+  mesh(B(.22, .25, .22), C.paper, 0, .125, 0, head);                                      // face: the light shape at the top
+  if (kind === "spr") { mesh(CO(.44, .22, 10), C.ink, 0, .34, 0, head); }                 // jingasa: wide conical hat
+  if (kind === "arc") { mesh(B(.24, .1, .24), C.ink, 0, .27, 0, head); mesh(B(.25, .05, .25), C.paper, 0, .2, 0, head); mesh(B(.04, .05, .16), C.paper, 0, .2, -.18, head, .6); }
+  if (kind === "sam") {
+    mesh(new THREE.SphereGeometry(.17, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2), C.ink, 0, .23, 0, head);
+    mesh(CY(.18, .34, .16, 8, true), C.ink, 0, .17, -.02, head);                          // flared neck guard
+    mesh(new THREE.TorusGeometry(.2, .035, 4, 12, Math.PI), C.paper, 0, .38, .14, head, 0, 0, 0);   // crescent crest
+  }
+  if (kind === "mnk") { mesh(B(.32, .34, .32), C.paper, 0, .15, -.02, head); mesh(B(.2, .05, .02), C.ink, 0, .17, .15, head); }   // white cowl, eye slit
+  if (kind === "nin") { mesh(B(.27, .3, .27), C.ink, 0, .14, -.01, head); mesh(B(.18, .06, .02), C.paper, 0, .15, .13, head); }    // dark hood, eye slit
+  if (kind !== "nin" && kind !== "mnk") {                                                 // sashimono: the Tsuru vermilion on every clan soldier
+    mesh(CY(.016, .016, 1.3, 4), C.wood, 0, top + .35, -.2, body);
+    mesh(B(.02, .3, .18), C.verm, 0, top + .8, -.2 - .09, body, 0, Math.PI / 2, 0);
+  }
+  if (kind === "spr") { const sp = mesh(CY(.022, .022, 2.9, 4), C.wood, 0, -.15, .05, armR, .08); mesh(CO(.05, .26, 4), C.paper, 0, 1.55, 0, sp); }
+  if (kind === "arc") { mesh(new THREE.TorusGeometry(.78, .028, 4, 14, Math.PI * .85), C.ink, .02, -.45, .08, armL, 0, Math.PI / 2, Math.PI / 2 + Math.PI * .075);
+    const q = mesh(CY(.07, .07, .55, 6), C.plate, .12, top - .05, -.2, body, -.35); for (const dx of [-.03, .03]) mesh(B(.02, .2, .02), C.paper, dx, .32, 0, q); }
+  if (kind === "sam") { mesh(B(.04, .04, .9), C.ink, .24, hip + .3, .12, body, .5, .3); }   // sword at the hip
+  if (kind === "mnk") { const n = mesh(CY(.022, .022, 2.4, 4), C.wood, 0, -.2, .05, armR, .12); mesh(B(.05, .5, .1), C.paper, 0, 1.38, .06, n, .3); }   // naginata
+  if (kind === "nin") { mesh(B(.04, .7, .05), C.ink, .1, top + .05, -.2, body, 0, 0, .7); body.rotation.x = .18; }   // short sword on the back, a forward crouch
+  root.userData = { body, legs, armR, armL, weaponArm: ["spr", "mnk"].includes(kind) ? armR : kind === "arc" ? armL : null };
+  root.scale.setScalar(.95); return root;
+}
+function addUnit(kind, x, z, scout) {
+  const u = { x, z, tx: x, tz: z, wait: Math.random() * 3, scout, home: [x, z], phase: Math.random() * 6, yaw: Math.PI / 4 + (Math.random() - .5) * 1.2, moving: false };
+  if (UNITS2D) {
+    const [id, piv] = UNITS[kind], tex = tl.load(`assets/${id}.webp`, t => { const h = 1.95, w = h * t.image.width / t.image.height; sp.scale.set(w, h, 1); sp.userData.w = w; });
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, alphaTest: .5 })); sp.center.set(piv, 0); unitScene.add(sp); u.sp = sp;
+  } else { u.fig = soldier(kind === "tep" ? "spr" : kind); scene.add(u.fig); }
+  u.pool = new THREE.Mesh(POOL_GEO, POOL_MAT); u.pool.rotation.x = -Math.PI / 2; scene.add(u.pool);
+  units.push(u); poseUnit(u, 0); return u;
+}
+function poseUnit(u, st) {                                 // called on twos: 12 poses a second
+  const y = height(u.x, u.z);
+  if (u.sp) { u.sp.position.set(u.x, y + (u.moving && Math.floor(u.phase) % 2 ? .04 : 0), u.z); }
+  if (u.fig) {
+    const d = u.fig.userData, s = u.moving ? Math.sin(u.phase) : 0, idle = Math.sin(u.phase * .35) * .05;
+    d.legs.forEach((l, i) => l.rotation.x = (i ? -s : s) * .6);
+    d.armR.rotation.x = (d.armR === d.weaponArm ? -s * .12 : -s * .45) + idle; d.armL.rotation.x = (d.armL === d.weaponArm ? s * .12 : s * .45) - idle;
+    d.body.position.y = u.moving ? Math.abs(Math.cos(u.phase)) * .06 : 0;
+    let dy = u.yaw - u.fig.rotation.y; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); u.fig.rotation.y += dy * .5;
+    u.fig.position.set(u.x, y, u.z);
+  }
+  u.pool.position.set(u.x, y + .03, u.z);
+}
+[["spr", -.3, .6], ["spr", 2.7, .2], ["arc", .2, 2.6], ["sam", 2.6, 2.6], ["mnk", -1.0, 3.0], ["spr", 3.4, -1.2], ["arc", 1.2, -.6], ["spr", 1.4, 1.5]].forEach(a => addUnit(...a));
 const scout = addUnit("nin", -1, 4.5, true);
-function placePools() { for (const u of units) u.sp.userData.pool.position.set(u.x, height(u.x, u.z) + .03, u.z); }
-placePools();
-
-// ---------- the 3D spearman: real model, inked like the buildings, animated on twos ----------
-const actors = [];
+const actors = [];                                          // (the Tripo spearman stays available: ?tripo=1)
 function addActor(file, path, height) {
   loader.load(`models/${file}`, gl => {
-    const root = gl.scene, box = new THREE.Box3().setFromObject(root), s = height / (box.max.y - box.min.y);
-    root.scale.setScalar(s);
-    root.traverse(o => { if (o.isMesh) { const map = o.material.map, vc = !!o.geometry.attributes.color;
-      o.material = new THREE.MeshLambertMaterial({ map, vertexColors: vc, color: map || vc ? 0xffffff : 0xdddddd, side: THREE.DoubleSide });
-      o.material.onBeforeCompile = sh => { sh.fragmentShader = sh.fragmentShader.replace('#include <opaque_fragment>',
-        'float rim = pow(clamp(1.0 - abs(normalize(normal).z), 0.0, 1.0), 2.2); outgoingLight = mix(outgoingLight, vec3(.95,.92,.86), smoothstep(.35,.75,rim) * .85);\n#include <opaque_fragment>'); };
-      o.frustumCulled = false; } });
+    const root = gl.scene, box = new THREE.Box3().setFromObject(root), s = height / (box.max.y - box.min.y); root.scale.setScalar(s);
+    root.traverse(o => { if (o.isMesh) { o.material = new THREE.MeshLambertMaterial({ map: o.material.map, side: THREE.DoubleSide }); o.frustumCulled = false; } });
     const holder = new THREE.Group(); holder.add(root); scene.add(holder);
-    const mixer = new THREE.AnimationMixer(root), clips = gl.animations;
-    const pick = re => clips.find(c => re.test(c.name));
-    const walk = pick(/walk|run/i) || clips[0];
-    if (walk) mixer.clipAction(walk).play();
-    actors.push({ holder, mixer, path, t: Math.random(), speed: walk ? 1.1 : 0 });
+    const mixer = new THREE.AnimationMixer(root), walk = gl.animations[0]; if (walk) mixer.clipAction(walk).play();
+    actors.push({ holder, mixer, path, t: 0, speed: 1.1 });
   }, undefined, () => {});
 }
-addActor("spearman.glb", [[1.4, 3.0], [3.2, 1.4], [1.4, -.2], [-.4, 1.4]], 2.1);
+if (/tripo=1/.test(location.search)) addActor("spearman.glb", [[1.4, 3.0], [3.2, 1.4], [1.4, -.2], [-.4, 1.4]], 2.1);
 function stepActors(st) {
-  for (const a of actors) {
-    a.mixer.update(st);
-    if (!a.speed) continue;
-    const P = a.path, n = P.length; a.t += st * a.speed / 4; const k = Math.floor(a.t) % n, f = a.t % 1;
+  for (const a of actors) { a.mixer.update(st); const P = a.path, n = P.length; a.t += st * a.speed / 4; const k = Math.floor(a.t) % n, f = a.t % 1;
     const [x0, z0] = P[k], [x1, z1] = P[(k + 1) % n], x = x0 + (x1 - x0) * f, z = z0 + (z1 - z0) * f;
-    a.holder.position.set(x, height(x, z), z); a.holder.rotation.y = Math.atan2(x1 - x0, z1 - z0);
-    reveal(tg, x, z, 4.5);
-  }
+    a.holder.position.set(x, height(x, z), z); a.holder.rotation.y = Math.atan2(x1 - x0, z1 - z0); }
 }
 
 // ---------- camera: orthographic isometric, portrait ----------
@@ -273,15 +315,17 @@ function frame(now) {
   night += (nightTo - night) * Math.min(1, dt * 1.5);
   if (stepAcc >= 1 / 12) { const st = stepAcc; stepAcc = 0;
     for (const u of units) {
-      if (u.wait > 0) { u.wait -= st; if (u.wait <= 0 && !u.scout) { u.tx = u.home[0] + (Math.random() - .5) * .5; u.tz = u.home[1] + (Math.random() - .5) * .5; } continue; }
+      u.phase += st * (u.moving ? 9 : 2);
+      if (u.wait > 0) { u.moving = false; u.wait -= st; if (u.wait <= 0 && !u.scout) { u.tx = u.home[0] + (Math.random() - .5) * .9; u.tz = u.home[1] + (Math.random() - .5) * .9; } poseUnit(u, st); continue; }
       const dx = u.tx - u.x, dz = u.tz - u.z, dist = Math.hypot(dx, dz), sp = (u.scout ? 3.2 : 1.2) * st;
-      if (dist < .05) { u.wait = u.scout ? 1e9 : 1 + Math.random() * 3; continue; }
+      if (dist < .05) { u.wait = u.scout ? 1e9 : 1.5 + Math.random() * 3; u.moving = false; u.yaw = FACE_CAM + (Math.random() - .5) * 1.4; poseUnit(u, st); continue; }
+      u.moving = true; u.yaw = Math.atan2(dx, dz);
       u.x += dx / dist * Math.min(sp, dist); u.z += dz / dist * Math.min(sp, dist);
-      const sx = tmp.set(dx, 0, dz).dot(camRight); if (u.sp.userData.w) u.sp.scale.x = Math.abs(u.sp.scale.x) * (sx < 0 ? -1 : 1);
-      u.sp.position.set(u.x, height(u.x, u.z) + (Math.floor(now / 160) % 2 ? .04 : 0), u.z);
+      if (u.sp) { const sx = tmp.set(dx, 0, dz).dot(camRight); if (u.sp.userData.w) u.sp.scale.x = Math.abs(u.sp.scale.x) * (sx < 0 ? -1 : 1); }
+      poseUnit(u, st);
       reveal(tg, u.x, u.z, u.scout ? 6.5 : 4.5);
     }
-    stepActors(st); placePools();
+    stepActors(st);
     sg.globalAlpha = .07; sg.drawImage(target2d, 0, 0); sg.globalAlpha = 1; revealTex.needsUpdate = true;   // seen land soaks in over about a second
   }
   const U = quad.material.uniforms; U.time.value = now / 1000; U.night.value = night;
