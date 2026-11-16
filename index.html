@@ -3118,7 +3118,7 @@ function frame(now) {
 /* ---------- playtest: a feedback form and a short report at the end of every game, sent to Netlify Forms ---------- */
 const playtest = {
   build: "2026-11-15b",
-  live: /netlify\.app$/.test(location.hostname) || /^sengoku/.test(location.hostname),   // only report from the hosted playtest site
+  live: /netlify\.app$/.test(location.hostname) || /^sengoku/.test(location.hostname) || /^zachgracia-studio\.github\.io$/.test(location.hostname),   // only report from the hosted playtest site
   tester() { try { let id = localStorage.getItem("sengoku.tester"); if (!id) { id = "T" + Math.random().toString(36).slice(2, 8).toUpperCase(); localStorage.setItem("sengoku.tester", id); } return id; } catch (e) { return "anon"; } },
   device: () => `${innerWidth}x${innerHeight} ${/iPhone|iPad/.test(navigator.userAgent) ? "iOS" : /Android/.test(navigator.userAgent) ? "Android" : "desktop"}`,
   where: () => !S ? "menu" : `${CH.sandbox ? "Test ground" : CH.name} · ${S.phase === "night" ? "night " + S.night : "day " + S.day} · ${season().name}`,
