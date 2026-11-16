@@ -2622,7 +2622,7 @@ function drawPlacementGrid() {
 }
 function drawPlacementGhost() {
   const p = ui.place, d = BUILDINGS[p.type], ok = canPlace(p.type, p.tx, p.ty) && S.rice >= d.cost, c = iso(p.tx + d.w / 2, p.ty + d.h / 2);
-  if (d.palisade) { const im = IMG[d.art], w = im.width * PAL_K * cam.z, h = im.height * PAL_K * cam.z, s0 = toScreen(c.X, c.Y);
+  if (r3on()) {} else if (d.palisade) { const im = IMG[d.art], w = im.width * PAL_K * cam.z, h = im.height * PAL_K * cam.z, s0 = toScreen(c.X, c.Y);
     ctx.save(); ctx.globalAlpha = ok ? .62 : .35; ctx.drawImage(im, s0.x - w / 2, s0.y - h * (d.gate ? .9 : .73), w, h); ctx.restore(); }
   else if (d.iso) { const f = iso(p.tx + d.w, p.ty + d.h); drawSprite(d.art, f.X, f.Y, { alpha: ok ? .62 : .35 }); }
   else drawSprite(d.art, c.X, c.Y + d.baseY * TH, { alpha: ok ? .62 : .35 });
@@ -2691,7 +2691,7 @@ function drawDev() {
 }
 
 /* =========================================================================
-   RENDER 3D (?r=3d) — the same world drawn as an ink painting in 3D (Three.js).
+   RENDER 3D (default; ?r=2d for the old look) — the same world drawn as an ink painting in 3D (Three.js).
    One tile = one world unit: world X = tile x, world Z = tile y, Y is up.
    The camera reproduces the 2D isometric projection exactly (true isometric:
    sin(elevation) = TH / TW), so input, selection and every overlay drawn with
@@ -2701,8 +2701,8 @@ function drawDev() {
    on twos (12 a second). Values: ink, gray wash, paper; vermilion only for the
    Tsuru clan (banners on the keep, the weapon of every soldier).
    ========================================================================= */
-const USE3D = /[?&]r=3d/.test(location.search);
-const R3 = { ready: false, loading: false, S: null, bmap: new Map(), umap: new Map(), fmap: new Map(), poseAcc: 0, last: 0 };
+const USE3D = !/[?&]r=2d/.test(location.search);   // 3D is the default; ?r=2d shows the 2D renderer
+const R3 = { ready: false, loading: false, S: null, bmap: new Map(), umap: new Map(), fmap: new Map(), dying: [], poseAcc: 0, last: 0 };
 let THREE = null;
 function r3on() { return USE3D && R3.ready && !!S; }
 
@@ -2864,6 +2864,12 @@ function buildingKit(b) {
   }
   return K.geo();
 }
+function char(geo, b, dmg) {   // scorch: a share of faces burn to ink, more as the damage grows
+  const c = geo.attributes.color, n = c.count / 3, share = dmg === 2 ? .38 : .2;
+  for (let t = 0; t < n; t++) { const r = Math.sin((t + b.id * 13) * 12.9898) * 43758.5453; if (r - Math.floor(r) > share) continue;
+    for (let v = 0; v < 3; v++) c.setXYZ(t * 3 + v, .11, .11, .12); }
+  c.needsUpdate = true;
+}
 function scaffoldKit(b, f) {   // under construction: a pole frame and a stone base; the building rises with progress
   const K = new Kit(), W = b.w / 2 - .08, H = b.h / 2 - .08, top = .4 + f * .9;
   K.box(0, 0, 0, b.w - .1, .06, b.h - .1, K3.yard);
@@ -2999,7 +3005,7 @@ function propKit(art, w, h, seed) {
 /* ---------- the world: ground, river, ridge, the painted hills beyond the map ---------- */
 function buildWorld() {
   const old = R3.world; if (old) { R3.scene.remove(old); old.traverse(o => o.geometry && o.geometry.dispose()); }
-  R3.bmap.clear(); R3.umap.clear(); R3.fmap.clear();
+  R3.bmap.clear(); R3.umap.clear(); R3.fmap.clear(); R3.dying.length = 0; R3.ghost = null;
   const W = new THREE.Group(); R3.scene.add(W); R3.world = W; R3.S = S;
   const mat = R3.kitMat, N = MAP;
   const hash = (x, y) => { const s = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return s - Math.floor(s); };
@@ -3034,17 +3040,21 @@ function syncBuildings() {
     seen.add(b.id);
     const f = b.progress >= 1 ? 1 : Math.round(b.progress * 4) / 4;
     const nb = BUILDINGS[b.type].palisade ? [[0, -1], [1, 0], [0, 1], [-1, 0]].map(([x, y]) => palAt(b.tx + x, b.ty + y) ? 1 : 0).join("") : "";
-    const key = `${b.type}|${b.tier}|${f}|${nb}`;
+    const dmg = f < 1 || BUILDINGS[b.type].palisade ? 0 : b.hp < b.maxHp * .25 ? 2 : b.hp < b.maxHp * .5 ? 1 : 0;
+    const key = `${b.type}|${b.tier}|${f}|${nb}|${dmg}`;
     let e = R3.bmap.get(b.id);
     if (!e || e.key !== key) {
       if (e) { R3.world.remove(e.g); e.g.traverse(o => o.geometry && o.geometry.dispose()); }
       const g = new THREE.Group(); g.position.set(b.tx + b.w / 2, 0, b.ty + b.h / 2);
       if (f < 1) { g.add(new THREE.Mesh(scaffoldKit(b, f), R3.kitMat)); const inner = new THREE.Mesh(buildingKit(b), R3.kitMat); inner.scale.y = Math.max(.15, f); g.add(inner); }
-      else g.add(new THREE.Mesh(buildingKit(b), R3.kitMat));
+      else { const geo = buildingKit(b); if (dmg) char(geo, b, dmg); g.add(new THREE.Mesh(geo, R3.kitMat));
+        if (dmg) { const K = new Kit(); for (let i = 0; i < 3 + dmg * 3; i++) { const a = b.id * 1.7 + i * 2.39, r = Math.min(b.w, b.h) * .45;
+          K.rock(Math.cos(a) * r, 0, Math.sin(a) * r, .07 + (i % 3) * .04, i % 2 ? K3.ink : K3.wood, a); K.box(Math.cos(a + 1) * r * .8, 0, Math.sin(a + 1) * r * .8, .45, .04, .06, K3.ink, 1, a); }
+          g.add(new THREE.Mesh(K.geo(), R3.kitMat)); } }
       if (b.flip) g.rotation.y = Math.PI / 2;
       const box = new THREE.Box3().setFromObject(g); e = { g, key, h: box.max.y }; R3.world.add(g); R3.bmap.set(b.id, e);
     }
-    e.g.scale.y = b.progress >= 1 && b.hp < b.maxHp * .25 ? .92 : 1;   // badly damaged buildings sag
+    e.g.scale.y = dmg === 2 ? .9 : 1;   // badly damaged buildings sag
   }
   for (const [id, e] of R3.bmap) if (!seen.has(id)) { R3.world.remove(e.g); e.g.traverse(o => o.geometry && o.geometry.dispose()); R3.bmap.delete(id); }
   // paddies: pale plates with dark bunds; the crop rises with each stage
@@ -3091,10 +3101,16 @@ function syncUnits(pose) {
       if (D.armL) D.armL.rotation.x = (D.armL === D.weaponArm ? s * .12 : s * .45) - idle;
       if (atk && D.weaponArm) D.weaponArm.rotation.x = -1.1 + (S.t - u.atkT) * 3;   // thrust forward, recover
       D.body.position.y = (e.mv ? Math.abs(Math.cos(ph)) * .06 : 0) + (D.float ? .25 + Math.sin(ph * .5) * .08 : 0);
-      if (S.t - (u.hitT ?? -9) < .15) D.body.position.x = Math.sin(S.t * 90) * .04; else D.body.position.x = 0;
+      const hit = S.t - (u.hitT ?? -9) < .1;   // impact frame: the figure flashes paper-white for an instant
+      if (hit !== !!D.flash) { D.flash = hit; f.traverse(o => { if (o.isMesh) o.material = hit ? R3.flashMat : figMat(); }); }
+      D.body.position.x = S.t - (u.hitT ?? -9) < .15 ? Math.sin(S.t * 90) * .04 : 0;
     }
   }
-  for (const [id, e] of R3.umap) if (!seen.has(id)) { R3.world.remove(e.g); R3.umap.delete(id); }
+  for (const [id, e] of R3.umap) if (!seen.has(id)) {   // the fallen topple and sink into the ground
+    R3.umap.delete(id); e.dieT = S.t; const pool = e.g.children.find(o => o.geometry === R3.poolGeo); if (pool) e.g.remove(pool); R3.dying.push(e); }
+  for (let i = R3.dying.length - 1; i >= 0; i--) { const e = R3.dying[i], a = (S.t - e.dieT) / .9;
+    if (a >= 1 || a < 0) { R3.world.remove(e.g); R3.dying.splice(i, 1); continue; }
+    for (const f of e.figs) { f.rotation.z = Math.min(1, a * 3) * 1.45; f.position.y = -Math.max(0, a - .45) * 1.2; } }
 }
 
 /* ---------- camera: the 2D isometric projection, reproduced ---------- */
@@ -3107,21 +3123,49 @@ function syncCamera() {
   c.lookAt(t.x, 0, t.y); c.updateMatrixWorld();
 }
 
-/* ---------- health bars for the overlay (2D canvas draws them on top of the 3D world) ---------- */
+/* ---------- the overlay pass (2D canvas, drawn on top of the 3D world each frame) ---------- */
+const HEIGHT_PX = () => (TW / 2) * Math.SQRT2 * cam.z * Math.cos(ISO_EL);   // screen px per world unit of height
 R3.bars = function () {
-  const k = (TW / 2) * Math.SQRT2 * cam.z * Math.cos(ISO_EL);   // screen px per world unit of height
+  const k = HEIGHT_PX(), na = S.nightAmt || 0;
   for (const u of S.units) if (!u.dead && !u.hidden && u.hp < u.maxHp && !u.worker) {
-    const p = iso(u.x, u.y), s = toScreen(p.X, p.Y), big = ["oni", "brute", "gashadokuro", "tengu"].includes(u.type);
-    hpBar(s.x, s.y - (big ? 2.2 : 1.55) * k * FIG_SCALE / .6 - 6, u.hp / u.maxHp, u.team === "E", u.size > 1 ? 40 : 28); }
-  for (const b of S.buildings) if (b.hp < b.maxHp && b.progress >= 1 && b.type !== "keep") {
-    const e = R3.bmap.get(b.id), p = iso(b.tx + b.w / 2, b.ty + b.h / 2), s = toScreen(p.X, p.Y);
-    hpBar(s.x, s.y - (e ? e.h : 1) * k - 8, b.hp / b.maxHp, false, 44); }
+    const p = iso(u.x, u.y), s = toScreen(p.X, p.Y);
+    hpBar(s.x, s.y - unitHeight(u) * k - 6, u.hp / u.maxHp, u.team === "E", u.size > 1 ? 40 : 28); }
+  for (const b of S.buildings) {
+    const e = R3.bmap.get(b.id), d = BUILDINGS[b.type], c = iso(b.tx + b.w / 2, b.ty + b.h / 2), s = toScreen(c.X, c.Y), f = iso(b.tx + b.w, b.ty + b.h), sf = toScreen(f.X, f.Y), top = s.y - (e ? e.h : 1) * k;
+    if (b.hp < b.maxHp && b.progress >= 1 && b.type !== "keep") hpBar(s.x, top - 8, b.hp / b.maxHp, false, 44);
+    if (ui.bldg === b) { ctx.save(); diamondPath(b.tx, b.ty, b.w, b.h); ctx.strokeStyle = "#C8372D"; ctx.lineWidth = 2.5; ctx.stroke(); ctx.restore(); }
+    const bar = (frac, col) => { const bw = 64 * cam.z; ctx.fillStyle = na > .5 ? "rgba(237,228,211,.3)" : "rgba(27,27,31,.18)";
+      ctx.fillRect(sf.x - bw / 2, sf.y + 6, bw, 5); ctx.fillStyle = col; ctx.fillRect(sf.x - bw / 2, sf.y + 6, bw * frac, 5); };
+    if (b.progress < 1) bar(b.progress, na > .5 ? "#EDE4D3" : "#1B1B1F"); else if (b.upg) bar(b.upg.t / b.upg.time, "#C8372D");
+    if (b.progress >= 1 && b.hp < b.maxHp * .45 && !d.palisade) {   // fire and smoke on badly damaged buildings
+      const im = IMG["fx_fire" + (1 + Math.floor(S.t * 8 + b.id) % 3)], w = 26 * cam.z;
+      if (im) ctx.drawImage(im, s.x - w * .6, top + 6 * cam.z - w, w, w * im.height / im.width);
+      const sm = IMG.fx_smoke, a = (S.t * .4 + b.id * .37) % 1, sw = 70 * cam.z * (.7 + a * .5);
+      if (sm) { ctx.save(); ctx.globalAlpha = (1 - a) * .55; ctx.drawImage(sm, s.x - sw / 2, top - a * 40 * cam.z - sw * sm.height / sm.width, sw, sw * sm.height / sm.width); ctx.restore(); }
+    }
+  }
+};
+function unitHeight(u) { const big = { oni: 1.9, brute: 2.3, gashadokuro: 4.2, tengu: 1.75, kappa: 1.1, kitsune: .85, cavalry: 2.1 }[u.type]; return (big || 1.45) * FIG_SCALE / .6; }
+R3.hit = function (u) {   // tap target for a unit: a circle over the middle of the 3D figure
+  const k = HEIGHT_PX(), p = iso(u.x, u.y), s = toScreen(p.X, p.Y), h = unitHeight(u) * k;
+  return { x: s.x, y: s.y - h * .5, r: Math.max(26, h * .55 * (u.size > 1 ? 1.35 : 1)) };
+};
+R3.pickBuilding = function (sx, sy) {   // tap a building anywhere on its 3D shape, roofs included
+  if (!R3.ray) R3.ray = new THREE.Raycaster();
+  R3.ray.setFromCamera(new THREE.Vector2(sx / vw * 2 - 1, -sy / vh * 2 + 1), R3.cam);
+  let best = null, bd = 1e9;
+  for (const b of S.buildings) { const e = R3.bmap.get(b.id); if (!e) continue;
+    const hit = R3.ray.intersectObject(e.g, true)[0]; if (hit && hit.distance < bd) { bd = hit.distance; best = b; } }
+  return best;
 };
 
 /* ---------- setup and the ink pass ---------- */
 async function init3d() {
   if (!USE3D || R3.loading) return; R3.loading = true;
   try { THREE = await import("./vendor/three.module.js"); } catch (e) { console.error("3D renderer could not load; staying in 2D", e); return; }
+  try { setup3d(); } catch (e) { console.warn("3D renderer unavailable on this device; staying in 2D", e); const c = document.getElementById("c3d"); if (c) c.remove(); R3.ready = false; }
+}
+function setup3d() {
   THREE.ColorManagement.enabled = false;
   const gl = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
   gl.outputColorSpace = THREE.LinearSRGBColorSpace; R3.dpr = Math.min(window.devicePixelRatio || 1, 2); gl.setPixelRatio(R3.dpr);
@@ -3130,6 +3174,8 @@ async function init3d() {
   R3.scene = new THREE.Scene(); R3.cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 160);
   const sun = new THREE.DirectionalLight(0xffffff, 1.25 * Math.PI); sun.position.set(-20, 30, 6); R3.scene.add(sun); R3.scene.add(new THREE.AmbientLight(0xffffff, .62 * Math.PI));
   R3.kitMat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
+  R3.ghostMat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide, emissive: 0x8a857c });   // the underdrawing: everything lifted toward paper
+  R3.flashMat = new THREE.MeshBasicMaterial({ color: 0xf4efe4 });   // the impact frame
   R3.poolGeo = new THREE.CircleGeometry(.42, 18); R3.poolGeo.scale(1, .62, 1); R3.poolMat = new THREE.MeshBasicMaterial({ color: 0x8f8b84 });
   R3.rt = new THREE.WebGLRenderTarget(1, 1, { depthBuffer: true }); R3.rt.depthTexture = new THREE.DepthTexture(1, 1); R3.rt.depthTexture.type = THREE.UnsignedIntType;
   R3.quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
@@ -3174,13 +3220,22 @@ async function init3d() {
   R3.quad.frustumCulled = false; R3.post = new THREE.Scene(); R3.post.add(R3.quad); R3.postCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   R3.ready = true;
 }
+function syncGhost() {
+  const p = ui.place;
+  if (!p) { if (R3.ghost) { R3.world.remove(R3.ghost.m); R3.ghost = null; } return; }
+  const d = BUILDINGS[p.type], key = p.type;
+  if (!R3.ghost || R3.ghost.key !== key) { if (R3.ghost) R3.world.remove(R3.ghost.m);
+    const fake = { type: p.type, tier: 0, w: d.w, h: d.h, tx: p.tx, ty: p.ty, progress: 1 };
+    const m = new THREE.Mesh(buildingKit(fake), R3.ghostMat); R3.world.add(m); R3.ghost = { m, key }; }
+  R3.ghost.m.position.set(p.tx + d.w / 2, .01, p.ty + d.h / 2);
+}
 function render3d() {
   if (!r3on()) return;
   const now = performance.now(), dt = Math.min(.1, (now - (R3.last || now)) / 1000); R3.last = now;
   if (R3.S !== S) buildWorld();
   const W = Math.round(vw * R3.dpr), H = Math.round(vh * R3.dpr);
   if (R3.w !== W || R3.h !== H) { R3.w = W; R3.h = H; R3.gl.setSize(vw, vh); R3.rt.setSize(W, H); R3.quad.material.uniforms.res.value.set(W, H); }
-  syncBuildings();
+  syncBuildings(); syncGhost();
   R3.poseAcc += dt; const pose = R3.poseAcc >= 1 / 12; if (pose) R3.poseAcc %= 1 / 12;   // poses on twos
   syncUnits(pose || !R3.posed); R3.posed = true;
   syncCamera();
@@ -3191,6 +3246,10 @@ function render3d() {
   R3.gl.setRenderTarget(null); R3.gl.render(R3.post, R3.postCam);
 }
 if (USE3D) init3d();
+function safe3d() {   // a failing 3D frame must never cost the game: after a few errors, fall back to 2D for the session
+  try { render3d(); } catch (e) { R3.err = (R3.err || 0) + 1; if (R3.err === 1) console.error(e);
+    if (R3.err > 3) { R3.ready = false; const c = document.getElementById("c3d"); if (c) c.remove(); console.warn("3D renderer disabled after errors; 2D from here"); } }
+}
 /* =========================================================================
    INPUT — drag pans, pinch zooms, tap selects/orders, long-press drags a
    selection box, double-tap selects all of a kind, drag moves a build preview.
@@ -3200,6 +3259,7 @@ const input = { g: null, box: null, lastTap: { id: 0, t: 0 }, holdTimer: 0 };
 const TAP_SLOP = 7;
 
 function hitTarget(u) {
+  if (r3on()) return R3.hit(u);
   const a = ASSETS[u.art], p = iso(u.x, u.y);
   const s = toScreen(p.X, p.Y - a.dispH * .45 - (a.floatY || 0));
   return { x: s.x, y: s.y, r: Math.max(26, a.dispH * .5 * cam.z * (u.size > 1 ? 1.35 : 1)) };
@@ -3215,7 +3275,9 @@ function pickUnit(sx, sy, team) {
 }
 function pickBuilding(sx, sy) {
   const t = screenToTile(sx, sy), tx = Math.floor(t.x), ty = Math.floor(t.y);
+  if (r3on()) { const b3 = R3.pickBuilding(sx, sy); if (b3) return b3; }
   if (tx >= 0 && ty >= 0 && tx < MAP && ty < MAP && S.occ[ty][tx] && !S.occ[ty][tx].prop) return S.occ[ty][tx];
+  if (r3on()) return null;
   // also accept taps on the tall part of the sprite
   let best = null;
   for (const b of S.buildings) {
@@ -3618,7 +3680,7 @@ $("bar").addEventListener("click", e => {
    ========================================================================= */
 let paused = false, running = false, acc = 0, lastT = 0, uiT = 0, hitStop = 0;
 function safeRender() {   // a drawing error must never leave the canvas stuck in a half-saved state (blank map)
-  try { if (r3on()) render3d(); render(); } catch (e) { if (!safeRender.n) console.error(e); safeRender.n = (safeRender.n || 0) + 1;
+  try { if (r3on()) safe3d(); render(); } catch (e) { if (!safeRender.n) console.error(e); safeRender.n = (safeRender.n || 0) + 1;
     const w = cv.width; cv.width = w; resize(); }
 }
 function frame(now) {
