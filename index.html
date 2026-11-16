@@ -3127,7 +3127,11 @@ const playtest = {
     if (!this.live) { console.info("[playtest]", form, data); return Promise.resolve(true); }
     // hosted on Netlify: post to itself. Anywhere else (GitHub Pages): post to the Netlify site, which keeps the forms
     if (location.hostname.endsWith("netlify.app") || location.hostname === "localhost") return fetch("/", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body }).then(r => r.ok).catch(() => false);
-    return fetch("https://sengoku-playtest.netlify.app/", { method: "POST", mode: "no-cors", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body }).then(() => true).catch(() => false);
+    // a cross-site fetch is dropped by Netlify, but an ordinary form post into a hidden frame is accepted
+    try { let fr = document.getElementById("ptSink"); if (!fr) { fr = document.createElement("iframe"); fr.id = fr.name = "ptSink"; fr.style.display = "none"; document.body.appendChild(fr); }
+      const f = document.createElement("form"); f.method = "POST"; f.action = "https://sengoku-playtest.netlify.app/"; f.target = "ptSink"; f.style.display = "none";
+      for (const [k, v] of new URLSearchParams(body)) { const i = document.createElement("input"); i.type = "hidden"; i.name = k; i.value = v; f.appendChild(i); }
+      document.body.appendChild(f); f.submit(); setTimeout(() => f.remove(), 2000); return Promise.resolve(true); } catch (e) { return Promise.resolve(false); }
   },
   run(result) {
     if (!S || S.reported || CH.tutorial && result === "quit") return; S.reported = true;
