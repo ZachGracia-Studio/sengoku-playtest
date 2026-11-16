@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>Sengoku · 3D look test</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #EDE4D3; overflow: hidden; touch-action: none; font-family: Georgia, serif; }
+  canvas { display: block; }
+  #ui { position: fixed; left: 0; right: 0; bottom: calc(env(safe-area-inset-bottom) + 12px); display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; padding: 0 10px; }
+  #ui button { font: 600 13px Georgia, serif; letter-spacing: .06em; text-transform: uppercase; background: #EDE4D3; color: #1B1B1F; border: 1.5px solid #1B1B1F; padding: 10px 12px; min-height: 42px; }
+  #ui button.on { background: #1B1B1F; color: #EDE4D3; }
+  #note { position: fixed; top: calc(env(safe-area-inset-top) + 10px); left: 12px; right: 12px; font-size: 13px; color: #1B1B1F; opacity: .75; pointer-events: none; }
+</style>
+<script type="importmap">{ "imports": { "three": "./vendor/three.module.js", "three/addons/": "./vendor/jsm/" } }</script>
+</head>
+<body>
+<div id="note">3D look test · drag to look around · tap the ground to send the scout · pinch to zoom</div>
+<div id="ui">
+  <button id="bNight">Night</button>
+  <button id="bFog" class="on">Fog</button>
+  <button id="bInk" class="on">Ink</button>
+  <button id="bReset">Reset fog</button>
+</div>
+<script type="module">
+import * as THREE from "three";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+
+THREE.ColorManagement.enabled = false;
+const MAP = 48, HALF = MAP / 2;
+const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
+renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
+const DPR = Math.min(devicePixelRatio, 2);
+renderer.setPixelRatio(DPR);
+document.body.prepend(renderer.domElement);
+
+// ---------- terrain height: a flat valley floor, hills rising to the edges, a river ----------
+function hash(x, y) { const s = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return s - Math.floor(s); }
+function vnoise(x, y) { const ix = Math.floor(x), iy = Math.floor(y), fx = x - ix, fy = y - iy, u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy);
+  return THREE.MathUtils.lerp(THREE.MathUtils.lerp(hash(ix, iy), hash(ix + 1, iy), u), THREE.MathUtils.lerp(hash(ix, iy + 1), hash(ix + 1, iy + 1), u), v); }
+function fbm(x, y) { let a = 0, f = 1, w = .5; for (let i = 0; i < 4; i++) { a += vnoise(x * f, y * f) * w; f *= 2.03; w *= .5; } return a; }
+const riverX = z => 7 + Math.sin(z * .18) * 3.2 + Math.sin(z * .07 + 1) * 2;
+function height(x, z) {
+  const r = Math.hypot(x, z * 1.1), valley = THREE.MathUtils.smoothstep(r, 9, 21);
+  let h = valley * (fbm(x * .11 + 3, z * .11 + 7) * 7.5 + 1.2) + fbm(x * .3, z * .3) * .35;
+  const d = Math.abs(x - riverX(z)); h -= (1 - THREE.MathUtils.smoothstep(d, .6, 2.4)) * (h + .55);
+  return h;
+}
+
+const scene = new THREE.Scene();
+const sun = new THREE.DirectionalLight(0xffffff, 1.25 * Math.PI); sun.position.set(-20, 30, 10); scene.add(sun);
+scene.add(new THREE.AmbientLight(0xffffff, .62 * Math.PI));
+
+{ // terrain
+  const g = new THREE.PlaneGeometry(MAP + 12, MAP + 12, 140, 140); g.rotateX(-Math.PI / 2);
+  const p = g.attributes.position, col = [];
+  for (let i = 0; i < p.count; i++) { const x = p.getX(i), z = p.getZ(i), h = height(x, z); p.setY(i, h);
+    const c = h < -.2 ? .55 : h > 3.5 ? .7 - Math.min(.25, (h - 3.5) * .05) : .9 - fbm(x * .5, z * .5) * .12; col.push(c, c * .98, c * .93); }
+  g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3)); g.computeVertexNormals();
+  scene.add(new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true })));
+  const w = new THREE.Mesh(new THREE.PlaneGeometry(MAP + 12, MAP + 12), new THREE.MeshLambertMaterial({ color: 0xc9c6bf }));
+  w.rotation.x = -Math.PI / 2; w.position.y = -.32; scene.add(w);
+}
+{ // pines, instanced: trunk + three stacked tiers, darker than the ground
+  const tiers = new THREE.ConeGeometry(.9, 1.6, 7); const mat = new THREE.MeshLambertMaterial({ color: 0x3a3a3a });
+  const N = 260, inst = new THREE.InstancedMesh(tiers, mat, N * 3), m = new THREE.Matrix4(); let k = 0;
+  for (let i = 0; i < N * 6 && k < N * 3; i++) { const x = (hash(i, 1) - .5) * MAP, z = (hash(i, 2) - .5) * MAP, h = height(x, z);
+    if (Math.hypot(x, z) < 10.5 || h < 0 || Math.abs(x - riverX(z)) < 2.5) continue; if (fbm(x * .15 + 9, z * .15) < .45) continue;
+    const s = .7 + hash(i, 3) * .6;
+    for (let t = 0; t < 3; t++) { m.compose(new THREE.Vector3(x, h + (.9 + t * .7) * s, z), new THREE.Quaternion(), new THREE.Vector3(s * (1 - t * .22), s, s * (1 - t * .22))); inst.setMatrixAt(k++, m); } }
+  inst.count = k; scene.add(inst);
+}
+{ // rice paddies: flat pale plates with dark bunds, east of the keep
+  const mat = new THREE.MeshLambertMaterial({ color: 0xdedad0 }), bund = new THREE.MeshLambertMaterial({ color: 0x555555 });
+  for (let i = 0; i < 3; i++) for (let j = 0; j < 2; j++) { const x = -7.5 + i * 2.1, z = 3 + j * 2.1, y = height(x, z) + .04;
+    const p = new THREE.Mesh(new THREE.BoxGeometry(1.9, .06, 1.9), mat); p.position.set(x, y, z); scene.add(p);
+    const b = new THREE.Mesh(new THREE.BoxGeometry(2.05, .1, 2.05), bund); b.position.set(x, y - .03, z); scene.add(b); }
+}
+
+// ---------- buildings: Tripo models when present, otherwise a blocked-in stand-in ----------
+const roofMat = new THREE.MeshLambertMaterial({ color: 0x2a2a2a }), wallMat = new THREE.MeshLambertMaterial({ color: 0xf2efe8 }),
+  stoneMat = new THREE.MeshLambertMaterial({ color: 0x8c8a85 }), woodMat = new THREE.MeshLambertMaterial({ color: 0x4a4a4a }), redMat = new THREE.MeshLambertMaterial({ color: 0xC8372D });
+const roof = (w, d, h) => { const g = new THREE.ConeGeometry(Math.SQRT1_2 * 1.0, 1, 4); g.rotateY(Math.PI / 4); g.scale(w * 1.25, h, d * 1.25); return new THREE.Mesh(g, roofMat); };
+function standIn(type) {
+  const g = new THREE.Group();
+  if (type === "keep") {
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(2.3, 3.1, 1.6, 4, 1), stoneMat); base.rotation.y = Math.PI / 4; base.position.y = .8; g.add(base);
+    let y = 1.6, w = 3.0;
+    for (let s = 0; s < 4; s++) { const h = s === 0 ? 1.1 : .85, b = new THREE.Mesh(new THREE.BoxGeometry(w, h, w * .85), wallMat); b.position.y = y + h / 2; g.add(b);
+      const r = roof(w, w * .85, .7); r.position.y = y + h + .25; g.add(r); y += h + .45; w *= .74; }
+    for (const s of [-1, 1]) { const ban = new THREE.Mesh(new THREE.BoxGeometry(.08, 1.1, .45), redMat); ban.position.set(s * 1.9, 2.7, 1.6); g.add(ban); }
+  } else if (type === "dojo") {
+    const b = new THREE.Mesh(new THREE.BoxGeometry(3.6, 1.1, 2.0), wallMat); b.position.y = .55; g.add(b); const r = roof(3.6, 2, .9); r.position.y = 1.5; g.add(r);
+    for (let i = 0; i < 6; i++) { const p = new THREE.Mesh(new THREE.BoxGeometry(.05, 1.4, .05), woodMat); p.position.set(-1.4 + i * .5, .7, 1.4); p.rotation.z = .1; g.add(p); }
+  } else { const b = new THREE.Mesh(new THREE.BoxGeometry(1.5, .8, 1.3), wallMat); b.position.y = .4; g.add(b); const r = roof(1.5, 1.3, 1.3); r.position.y = 1.4; g.add(r); }
+  return g;
+}
+const SITES = [["keep", -2.6, -2.6, 0], ["dojo", 4.2, 4.2, 0], ["house", 3.4, -2.4, -.4], ["house", 5.8, .6, .9], ["house", -2.2, 3.6, .2]];
+const loader = new GLTFLoader();
+for (const [type, x, z, rot] of SITES) {
+  const site = new THREE.Group(); site.position.set(x, height(x, z), z); site.rotation.y = rot; scene.add(site);
+  const placeholder = standIn(type); site.add(placeholder);
+  loader.load(`models/${type}.glb`, gl => {   // fit the Tripo model to the stand-in's footprint, sit it on the ground
+    const m = gl.scene, box = new THREE.Box3().setFromObject(m), size = box.getSize(new THREE.Vector3());
+    const target = type === "keep" ? 6.4 : type === "dojo" ? 5 : 2.8, s = target / Math.max(size.x, size.z);
+    m.scale.setScalar(s); m.position.set(-(box.min.x + size.x / 2) * s, -box.min.y * s, -(box.min.z + size.z / 2) * s);
+    m.traverse(o => { if (o.isMesh) { const map = o.material.map, vc = !!o.geometry.attributes.color;
+      o.material = new THREE.MeshLambertMaterial({ map, vertexColors: vc, color: map || vc ? 0xffffff : 0xdddddd, side: THREE.DoubleSide }); } });
+    site.remove(placeholder); site.add(m);
+  }, undefined, () => {});
+}
+
+// ---------- units: the approved graphic-style cutouts, standing upright in the world ----------
+const unitScene = new THREE.Scene(), tl = new THREE.TextureLoader();
+const UNITS = { spr: ["mj_spr4", .471], arc: ["mj_arcF", .461], sam: ["mj_samF", .429], mnk: ["mj_mnk9", .665], nin: ["mj_ninF", .557], tep: ["mj_tepF", .411] };
+const units = [];
+function addUnit(kind, x, z, scout) {
+  const [id, piv] = UNITS[kind], tex = tl.load(`assets/${id}.webp`, t => { const h = 1.55, w = h * t.image.width / t.image.height; sp.scale.set(w, h, 1); sp.userData.w = w; });
+  tex.magFilter = THREE.LinearFilter;
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, alphaTest: .5 })); sp.center.set(piv, 0);
+  sp.position.set(x, height(x, z), z); unitScene.add(sp);
+  const u = { sp, x, z, tx: x, tz: z, wait: Math.random() * 3, scout, home: [x, z] }; units.push(u); return u;
+}
+[["spr", 1.2, .4], ["spr", 1.9, .9], ["arc", -.4, 1.6], ["sam", .6, 1.9], ["mnk", 2.4, -.6], ["tep", -.8, .2]].forEach(a => addUnit(...a));
+const scout = addUnit("nin", -1, 4.5, true);
+
+// ---------- the 3D spearman: real model, inked like the buildings, animated on twos ----------
+const actors = [];
+function addActor(file, path, height) {
+  loader.load(`models/${file}`, gl => {
+    const root = gl.scene, box = new THREE.Box3().setFromObject(root), s = height / (box.max.y - box.min.y);
+    root.scale.setScalar(s);
+    root.traverse(o => { if (o.isMesh) { const map = o.material.map, vc = !!o.geometry.attributes.color;
+      o.material = new THREE.MeshLambertMaterial({ map, vertexColors: vc, color: map || vc ? 0xffffff : 0xdddddd, side: THREE.DoubleSide }); o.frustumCulled = false; } });
+    const holder = new THREE.Group(); holder.add(root); scene.add(holder);
+    const mixer = new THREE.AnimationMixer(root), clips = gl.animations;
+    const pick = re => clips.find(c => re.test(c.name));
+    const walk = pick(/walk|run/i) || clips[0];
+    if (walk) mixer.clipAction(walk).play();
+    actors.push({ holder, mixer, path, t: Math.random(), speed: walk ? 1.1 : 0 });
+  }, undefined, () => {});
+}
+addActor("spearman.glb", [[-1.2, 2.6], [2.6, 2.2], [2.2, -1.2], [-1.6, -.4]], 1.7);
+function stepActors(st) {
+  for (const a of actors) {
+    a.mixer.update(st);
+    if (!a.speed) continue;
+    const P = a.path, n = P.length; a.t += st * a.speed / 4; const k = Math.floor(a.t) % n, f = a.t % 1;
+    const [x0, z0] = P[k], [x1, z1] = P[(k + 1) % n], x = x0 + (x1 - x0) * f, z = z0 + (z1 - z0) * f;
+    a.holder.position.set(x, height(x, z), z); a.holder.rotation.y = Math.atan2(x1 - x0, z1 - z0);
+    reveal(tg, x, z, 4.5);
+  }
+}
+
+// ---------- camera: orthographic isometric, portrait ----------
+const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, -200, 400), target = new THREE.Vector3(0, 0, 1);
+let zoom = 1;
+const AZ = Math.PI / 4, EL = THREE.MathUtils.degToRad(33);
+function placeCam() { const vh = 26 / zoom, a = innerWidth / innerHeight; cam.top = vh / 2; cam.bottom = -vh / 2; cam.left = -vh * a / 2; cam.right = vh * a / 2; cam.updateProjectionMatrix();
+  cam.position.set(target.x + Math.cos(EL) * Math.sin(AZ) * 80, target.y + Math.sin(EL) * 80, target.z + Math.cos(EL) * Math.cos(AZ) * 80); cam.lookAt(target); cam.updateMatrixWorld(); }
+
+// ---------- render targets ----------
+function rt() { const t = new THREE.WebGLRenderTarget(1, 1, { depthBuffer: true }); t.depthTexture = new THREE.DepthTexture(1, 1); t.depthTexture.type = THREE.UnsignedIntType; return t; }
+const colorRT = rt(), normalRT = rt(), unitRT = rt();
+const normalMat = new THREE.MeshNormalMaterial();
+
+// ---------- the reveal mask: explored land, soaking in gradually (world-space, MAP x MAP) ----------
+const RES = 256, target2d = document.createElement("canvas"), shown2d = document.createElement("canvas");
+target2d.width = target2d.height = shown2d.width = shown2d.height = RES;
+const tg = target2d.getContext("2d"), sg = shown2d.getContext("2d");
+const toPx = v => (v + HALF) / MAP * RES;
+function reveal(ctx, x, z, r) { const g = ctx.createRadialGradient(toPx(x), toPx(z), 0, toPx(x), toPx(z), r / MAP * RES);
+  g.addColorStop(0, "#fff"); g.addColorStop(.62, "#fff"); g.addColorStop(1, "rgba(255,255,255,0)"); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(toPx(x), toPx(z), r / MAP * RES, 0, 7); ctx.fill(); }
+function resetFog() { for (const c of [tg, sg]) { c.fillStyle = "#000"; c.fillRect(0, 0, RES, RES); } reveal(tg, 0, 1, 11.5); reveal(sg, 0, 1, 11.5); }
+resetFog();
+const revealTex = new THREE.CanvasTexture(shown2d); revealTex.minFilter = revealTex.magFilter = THREE.LinearFilter;
+
+// ---------- composite: ink the real world, paint the unknown, let the wet edge bleed ----------
+const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
+  uniforms: { tColor: { value: colorRT.texture }, tDepth: { value: colorRT.depthTexture }, tNormal: { value: normalRT.texture }, tNDepth: { value: normalRT.depthTexture },
+    tUnit: { value: unitRT.texture }, tUDepth: { value: unitRT.depthTexture }, tReveal: { value: revealTex },
+    invPV: { value: new THREE.Matrix4() }, res: { value: new THREE.Vector2() }, time: { value: 0 }, night: { value: 0 }, fogOn: { value: 1 }, inkOn: { value: 1 }, MAPSZ: { value: MAP } },
+  vertexShader: "varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0., 1.); }",
+  fragmentShader: `
+    precision highp float;
+    varying vec2 vUv;
+    uniform sampler2D tColor, tDepth, tNormal, tNDepth, tUnit, tUDepth, tReveal;
+    uniform mat4 invPV; uniform vec2 res; uniform float time, night, fogOn, inkOn, MAPSZ;
+    const vec3 PAPER = vec3(.929,.894,.827), WASH = vec3(.62,.6,.57), WASH2 = vec3(.43,.42,.41), INK = vec3(.106,.106,.122), VERM = vec3(.784,.216,.176), COOL = vec3(.122,.149,.2);
+    float h21(vec2 p){ p = fract(p*vec2(123.34,456.21)); p += dot(p,p+45.32); return fract(p.x*p.y); }
+    float vn(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.-2.*f); return mix(mix(h21(i),h21(i+vec2(1,0)),f.x), mix(h21(i+vec2(0,1)),h21(i+vec2(1,1)),f.x), f.y); }
+    float fb(vec2 p){ float a=0., w=.5; for(int i=0;i<5;i++){ a+=vn(p)*w; p*=2.07; w*=.5; } return a; }
+    vec3 worldAt(vec2 uv, float d){ vec4 w = invPV * vec4(uv*2.-1., d*2.-1., 1.); return w.xyz / w.w; }
+    float lum(vec3 c){ return dot(c, vec3(.3,.59,.11)); }
+    // three-value ink with a brush-bled boundary between values
+    vec3 inkTone(vec3 c, vec2 p){ float l = lum(c), n = fb(p*.9)*.16 - .08;
+      vec3 o = mix(INK, WASH2, smoothstep(.28+n, .34+n, l)); o = mix(o, WASH, smoothstep(.5+n, .56+n, l)); o = mix(o, PAPER, smoothstep(.74+n, .8+n, l));
+      float red = c.r - max(c.g, c.b); return mix(o, VERM, smoothstep(.25, .35, red)); }
+    void main(){
+      vec2 px = 1. / res; float d = texture2D(tDepth, vUv).x; vec3 c = texture2D(tColor, vUv).rgb;
+      vec3 wp = worldAt(vUv, d); vec2 wq = wp.xz;
+      // outlines: depth and normal breaks, sampled with a jittered offset so the line wobbles like a brush
+      float j = 1.1 + vn(gl_FragCoord.xy*.08 + time*.0)*1.2; vec2 o1 = px*j;
+      float dl = texture2D(tDepth, vUv-vec2(o1.x,0)).x, dr = texture2D(tDepth, vUv+vec2(o1.x,0)).x, du = texture2D(tDepth, vUv+vec2(0,o1.y)).x, dd = texture2D(tDepth, vUv-vec2(0,o1.y)).x;
+      vec3 n0 = texture2D(tNormal, vUv).xyz, nl = texture2D(tNormal, vUv-vec2(o1.x,0)).xyz, nu = texture2D(tNormal, vUv+vec2(0,o1.y)).xyz;
+      float edge = smoothstep(.0012, .004, max(abs(dl-dr), abs(du-dd))) + smoothstep(.35, .7, max(length(n0-nl), length(n0-nu)));
+      edge = clamp(edge, 0., 1.) * smoothstep(.2, .55, vn(gl_FragCoord.xy*.035)+.25);
+      vec3 real = inkOn > .5 ? inkTone(c, wq*1.3) : c;
+      real = mix(real, INK, edge*.92*inkOn);
+      // the painting of unexplored land: wider, wetter, two values, silhouettes only
+      vec3 cb = vec3(0.); for (int i=-2;i<=2;i++) for (int k=-2;k<=2;k++) cb += texture2D(tColor, vUv + vec2(float(i),float(k))*px*4.).rgb; cb /= 25.;
+      float pl = lum(cb) + (fb(wq*.35 + vec2(time*.01,0.))-.5)*.35;
+      vec3 paint = mix(WASH2, PAPER, smoothstep(.45, .7, pl)); paint = mix(paint, WASH, smoothstep(.55,.9, fb(wq*.12+3.))*.5);
+      paint = mix(paint, INK, edge*.45*smoothstep(.002,.01,max(abs(dl-dr),abs(du-dd))));
+      float mist = smoothstep(.45, .8, fb(wq*.08 + vec2(time*.015, time*.006))); paint = mix(paint, PAPER, mist*.55);
+      // reveal: world-space explored mask, ragged by noise; a dark wet bleed rides the front
+      vec2 ruv = (wq + MAPSZ*.5) / MAPSZ; float rv = texture2D(tReveal, ruv).r;
+      if (ruv.x < 0. || ruv.y < 0. || ruv.x > 1. || ruv.y > 1.) rv = 0.;
+      float rn = rv + (fb(wq*.55 + vec2(0., time*.05)) - .5) * .55;
+      float k = fogOn > .5 ? smoothstep(.42, .58, rn) : 1.;
+      float front = (1. - abs(rn - .5) * 6.) * fogOn; front = clamp(front, 0., 1.);
+      vec3 col = mix(paint, real, k);
+      col = mix(col, WASH2, front * .55 * (.6 + .4*vn(wq*3.)));
+      // units drawn over the world where they are in front of it and the land is known
+      vec4 u = texture2D(tUnit, vUv); float ud = texture2D(tUDepth, vUv).x;
+      if (u.a > .5 && ud <= d + .0005) col = mix(col, u.rgb * PAPER, step(.5, k));
+      // night: cool ink wash, paper grain kept
+      col = mix(col, col * mix(vec3(1.), COOL*2.2, .75), night);
+      float grain = .93 + .07*vn(gl_FragCoord.xy*.6) + .03*vn(gl_FragCoord.xy*.05);
+      gl_FragColor = vec4(col * grain, 1.);
+    }` , depthTest: false, depthWrite: false }));
+const post = new THREE.Scene(), postCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1); post.add(quad); quad.frustumCulled = false;
+
+function resize() { renderer.setSize(innerWidth, innerHeight); const w = innerWidth * DPR, h = innerHeight * DPR;
+  for (const t of [colorRT, normalRT, unitRT]) t.setSize(w, h); quad.material.uniforms.res.value.set(w, h); placeCam(); }
+addEventListener("resize", resize); resize();
+
+// ---------- input: drag to pan, pinch to zoom, tap to send the scout ----------
+const ptrs = new Map(); let downAt = null, moved = 0, pinch0 = 0, zoom0 = 1;
+const ray = new THREE.Raycaster(), groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+renderer.domElement.addEventListener("pointerdown", e => { ptrs.set(e.pointerId, [e.clientX, e.clientY]); downAt = [e.clientX, e.clientY]; moved = 0;
+  if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinch0 = Math.hypot(a[0] - b[0], a[1] - b[1]); zoom0 = zoom; } });
+renderer.domElement.addEventListener("pointermove", e => { if (!ptrs.has(e.pointerId)) return; const p = ptrs.get(e.pointerId), dx = e.clientX - p[0], dy = e.clientY - p[1]; ptrs.set(e.pointerId, [e.clientX, e.clientY]);
+  if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; zoom = THREE.MathUtils.clamp(zoom0 * Math.hypot(a[0] - b[0], a[1] - b[1]) / pinch0, .55, 2.2); placeCam(); return; }
+  moved += Math.abs(dx) + Math.abs(dy); const s = (cam.top - cam.bottom) / innerHeight;
+  const right = new THREE.Vector3(Math.cos(AZ), 0, -Math.sin(AZ)), fwd = new THREE.Vector3(-Math.sin(AZ), 0, -Math.cos(AZ));
+  target.addScaledVector(right, -dx * s).addScaledVector(fwd, dy * s / Math.sin(EL) * .5); target.x = THREE.MathUtils.clamp(target.x, -HALF, HALF); target.z = THREE.MathUtils.clamp(target.z, -HALF, HALF); placeCam(); });
+const up = e => { ptrs.delete(e.pointerId); if (ptrs.size === 0 && moved < 8 && downAt) { const ndc = new THREE.Vector2(e.clientX / innerWidth * 2 - 1, -e.clientY / innerHeight * 2 + 1);
+  ray.setFromCamera(ndc, cam); const hit = new THREE.Vector3(); for (let i = 0; i < 4; i++) { groundPlane.constant = -(i ? height(hit.x, hit.z) : 0); ray.ray.intersectPlane(groundPlane, hit); }
+  scout.tx = THREE.MathUtils.clamp(hit.x, -HALF + 1, HALF - 1); scout.tz = THREE.MathUtils.clamp(hit.z, -HALF + 1, HALF - 1); scout.wait = 0; } downAt = null; };
+renderer.domElement.addEventListener("pointerup", up); renderer.domElement.addEventListener("pointercancel", up);
+addEventListener("wheel", e => { zoom = THREE.MathUtils.clamp(zoom * (e.deltaY < 0 ? 1.1 : .91), .55, 2.2); placeCam(); });
+
+let night = 0, nightTo = 0;
+const btn = id => document.getElementById(id);
+btn("bNight").onclick = e => { nightTo = 1 - nightTo; e.target.classList.toggle("on", !!nightTo); };
+btn("bFog").onclick = e => { const u = quad.material.uniforms.fogOn; u.value = 1 - u.value; e.target.classList.toggle("on", !!u.value); };
+btn("bInk").onclick = e => { const u = quad.material.uniforms.inkOn; u.value = 1 - u.value; e.target.classList.toggle("on", !!u.value); };
+btn("bReset").onclick = () => resetFog();
+
+// ---------- loop: units walk on twos (12 steps a second), the fog soaks toward what has been seen ----------
+let last = performance.now(), stepAcc = 0;
+const tmp = new THREE.Vector3(), camRight = new THREE.Vector3(Math.cos(AZ), 0, -Math.sin(AZ));
+function frame(now) {
+  const dt = Math.min(.05, (now - last) / 1000); last = now; stepAcc += dt;
+  night += (nightTo - night) * Math.min(1, dt * 1.5);
+  if (stepAcc >= 1 / 12) { const st = stepAcc; stepAcc = 0;
+    for (const u of units) {
+      if (u.wait > 0) { u.wait -= st; if (u.wait <= 0 && !u.scout) { u.tx = u.home[0] + (Math.random() - .5) * 4; u.tz = u.home[1] + (Math.random() - .5) * 4; } continue; }
+      const dx = u.tx - u.x, dz = u.tz - u.z, dist = Math.hypot(dx, dz), sp = (u.scout ? 3.2 : 1.2) * st;
+      if (dist < .05) { u.wait = u.scout ? 1e9 : 1 + Math.random() * 3; continue; }
+      u.x += dx / dist * Math.min(sp, dist); u.z += dz / dist * Math.min(sp, dist);
+      const sx = tmp.set(dx, 0, dz).dot(camRight); if (u.sp.userData.w) u.sp.scale.x = Math.abs(u.sp.scale.x) * (sx < 0 ? -1 : 1);
+      u.sp.position.set(u.x, height(u.x, u.z) + (Math.floor(now / 160) % 2 ? .04 : 0), u.z);
+      reveal(tg, u.x, u.z, u.scout ? 6.5 : 4.5);
+    }
+    stepActors(st);
+    sg.globalAlpha = .07; sg.drawImage(target2d, 0, 0); sg.globalAlpha = 1; revealTex.needsUpdate = true;   // seen land soaks in over about a second
+  }
+  const U = quad.material.uniforms; U.time.value = now / 1000; U.night.value = night;
+  U.invPV.value.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse).invert();
+  renderer.setClearColor(0xEDE4D3, 1);
+  renderer.setRenderTarget(colorRT); renderer.render(scene, cam);
+  scene.overrideMaterial = normalMat; renderer.setRenderTarget(normalRT); renderer.render(scene, cam); scene.overrideMaterial = null;
+  renderer.setClearColor(0x000000, 0); renderer.setRenderTarget(unitRT); renderer.render(unitScene, cam);
+  renderer.setRenderTarget(null); renderer.render(post, postCam);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+window.__p3 = { scene, units, scout, target, placeCam, setZoom: z => { zoom = z; placeCam(); }, setNight: v => { nightTo = night = v; }, resetFog };
+</script>
+</body>
+</html>
