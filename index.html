@@ -275,6 +275,14 @@ body.board-c:not(.night) #hint {
   text-shadow: none;
 }
 body.board-c #bottom { text-align: center; }
+/* narrow phones: keep the phase pill (DAY / NIGHT n/N, yokai left) inside the screen */
+@media (max-width: 430px) {
+  #phaseBtn { white-space: nowrap; font-size: 15px; gap: 4px; padding-left: 8px; padding-right: 8px; }
+  #phaseBtn #seasonIco { display: none; }
+  #phaseBtn small { font-size: 11px; }
+  #right { max-width: calc(100vw - 150px); }
+  #phase { min-width: 0; }
+}
 </style>
 </head>
 <body>
@@ -5100,10 +5108,11 @@ const ui = {
     $("riceRate").textContent = `rice +${perDay(incomeRate())}/day`;
     $("popN").textContent = `${popUsed()}/${popCap()}`;
     const pi = `assets/ic_${S.phase === "day" ? "sun" : "moon"}.webp`; if (!$("phaseIcon").src.endsWith(pi)) $("phaseIcon").src = pi;
-    $("phaseN").textContent = S.phase === "day" ? `DAY ${S.day}` : `NIGHT ${S.night}/${CH.nights}`;
+    const narrowHud = innerWidth < 431;   // phones: shorter labels so the pill never pushes the pause button off-screen
+    $("phaseN").textContent = S.phase === "day" ? `DAY ${S.day}` : narrowHud ? `NIGHT ${S.night}` : `NIGHT ${S.night}/${CH.nights}`;
     { const si = $("seasonIco"), src = `assets/ic_${season().name.toLowerCase()}.webp`; si.style.display = CH.tutorial ? "none" : ""; if (!si.src.endsWith(src)) si.src = src; }
     const left = S.units.filter(u => u.team === "E" && !u.dead).length + S.spawnQueue.length;
-    $("phaseT").textContent = S.phase === "day" ? (CH.dayLength ? `${Math.ceil(S.phaseT)}s` : "") : `${left} yokai`;
+    $("phaseT").textContent = S.phase === "day" ? (CH.dayLength ? `${Math.ceil(S.phaseT)}s` : "") : narrowHud ? `${left} left` : `${left} yokai`;
     const k = keep(); $("keepFill").style.width = `${k ? k.hp / k.maxHp * 100 : 0}%`;
     $("objName").textContent = CH.objective || CH.name.toUpperCase();
     const nb = Math.min(CH.nights, 10), segs = Array.from({ length: nb }, (_, i) => `<i class="${i < Math.round(S.night * nb / CH.nights) ? "on" : ""}"></i>`).join("");
