@@ -2166,6 +2166,13 @@ function tinted(im, color, alpha = 1) {
   g.globalAlpha = alpha; g.fillStyle = color; g.fillRect(0, 0, c.width, c.height); return c;
 }
 const INK_RIM_IMG = {};
+const CUT_IMG = {};
+function getCutImg(id, night) {   // flat ground-tone silhouette used as a separation rim
+  const k = id + (night ? "|n" : "|d");
+  if (CUT_IMG[k]) return CUT_IMG[k];
+  if (!IMG[id] || !IMG[id].width) return null;
+  return (CUT_IMG[k] = tinted(IMG[id], night ? "#2A3242" : "#C9B68C", 1));
+}
 function getInkRimImg(id) {
   if (INK_RIM_IMG[id]) return INK_RIM_IMG[id];
   if (!IMG[id] || !IMG[id].width) return null;
@@ -4126,8 +4133,16 @@ function drawUnit(u, na) {
   const scale = (u.size > 1 ? .9 : 1) * uSc;
   for (const { o, i } of offs) {
     const art = frameFor(u, i);
-    const fx = o[0] * (u.size > 1 ? uSc : 0), fy = o[1] * (u.size > 1 ? uSc : 1);
+    const spread = STYLE_V2 ? 1.12 : 1;   // v2: formations stand a little looser so figures read individually
+    const fx = o[0] * (u.size > 1 ? uSc * spread : 0), fy = o[1] * (u.size > 1 ? uSc * spread : 1);
     if (!a0.floatY) shadow(p.X + fx, p.Y + fy, (cav ? 24 : u.type === "brute" || u.type === "oni" ? 22 : 13) * scale);
+    // crowd separation: a soft ground-coloured cut-out just behind each figure, so overlapping
+    // soldiers in a bunched group read as separate silhouettes rather than one black mass
+    if (IS_BOARD_C) {
+      const cut = getCutImg(art, na > .5);
+      if (cut) for (const [dx, dy] of [[-1.7, 0], [1.7, 0], [0, -1.5], [0, 1.2], [-1.2, -1.2], [1.2, -1.2]])
+        drawSprite(art, p.X + fx, p.Y + fy, { img: cut, face: u.face, alpha: alpha * (na > .5 ? .45 : .52), ox: ox + dx, oy: oy + dy, rot, scale });
+    }
     // C3 (d): Thin sumi-ink rim (replaces white paper halo under c1)
     if (IS_BOARD_C) {
       const rim = getInkRimImg(art);
