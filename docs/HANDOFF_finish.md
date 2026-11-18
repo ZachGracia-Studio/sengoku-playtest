@@ -2,6 +2,21 @@
 
 You're taking over the last stretch of the art direction for **Sengoku**, a phone-first isometric base-builder set in Sengoku-era Japan (about 1467–1615). The pitch: "Build by day. Hold the keep through the night." The direction is set and mostly built. Your job is to finish it so the game needs only final polish and sound files.
 
+> **Update, 18 Nov: revised scope after your first report.**
+> Your test browser can't run the game, so the work is now split:
+> - **You (ChatGPT): Task 1, painting only.** No browser is needed. The guides and references are already exported in `docs/guides/` on the branch:
+>   - `guide_{range,hideout,dojo}_2048.png`: the 2048×2048 camera guides, with labelled corners L, F, R and B.
+>   - `guide_*_2048_clean.png`: the same guides without the legend.
+>   - `style_reference_v2_buildings.png`: the approved v2 buildings, to match their style.
+>   - `layout_reference_old_{range,hideout,dojo}.png`: the old art, to keep each building's layout and function.
+>
+>   The footprint diamond in every guide is exactly L(224, 1437), R(1824, 1437), B(1024, 975), F(1024, 1900); width 1600, height 925, ratio 0.578.
+>
+>   **Deliver** three transparent PNGs at 2048×2048, framed exactly like the guide, with the base corners on those four points. Commit them to `assets/style/v2/buildings/src/{range,hideout,dojo}_2048.png` on the branch, or attach them to your reply.
+> - **Claude: Tasks 2–6, plus the Task 1 checks.** Claude will crop, wire and footprint-check your three buildings in the running game, measure their angles, and send back fixes if needed.
+>
+> You don't need to do Tasks 2–6 or run the game.
+
 Read this whole brief before starting. Work in the order given. Where a step says STOP, stop and report.
 
 ---
@@ -94,7 +109,7 @@ These still use the old art (`assets/style/b_range.webp`, `b_hideout.webp`, `b_d
 4. **Save it** as `assets/style/v2/buildings/range.webp`, `hideout.webp` and `dojo.webp`.
 5. **Wire it** in the `if (STYLE_V2)` block. Point `range_t1..t3`, `hideout_t1..t3` and `dojo_t1..t3` at the new files with `pivotX: 0.500, own: true`, exactly like the other v2 entries. Add `"range"`, `"hideout"` and `"dojo"` to `V2_ART` so they get the v2 construction, upgrade and damage states.
 6. **Check alignment** with `?r=2d&style=v2&test=board=c1&test=footprint`. The footprint diamond must hug the building's base. If it doesn't, adjust only that asset's pivot or fit.
-7. **Measure the angle.** Do it the same way as before: find the base corners L, F, R and B, then elevation = atan of (diamond height ÷ width) × 2. Pass is within **±1.5° of 35.3°**.
+7. **Measure the angle.** Find the base corners L, F, R and B, measure the diamond's width (L to R) and height (B to F), then elevation = **asin(height ÷ width)**. The target ratio is 0.578, which gives 35.3°. Pass is within **±1.5° of 35.3°**, which means a ratio between about 0.556 and 0.600.
 
 **Done when:** in the Test ground, all buildings read as one family, and the three new ones pass the footprint check and the angle measurement.
 
