@@ -559,6 +559,11 @@ if (STYLE_V2) {
   for (const k of ["tower_t1", "tower_t2", "tower_t3"]) ASSETS[k] = { src: "assets/style/v2/buildings/tower.webp", pivotX: 0.500, own: true };
   for (const k of ["temple_t1", "temple_t2", "temple_t3"]) ASSETS[k] = { src: "assets/style/v2/buildings/temple.webp", pivotX: 0.500, own: true };
   for (const k of ["stable_t1", "stable_t2", "stable_t3"]) ASSETS[k] = { src: "assets/style/v2/buildings/stable.webp", pivotX: 0.500, own: true };
+  // range, hideout and drill yard: painted over the 2048 camera guide (diamond 1600 px); crops are a bit wider than the diamond
+  for (const [t, f] of [["range", 1.0175], ["hideout", 1.0112], ["dojo", 1.0137]]) {
+    for (const k of [t + "_t1", t + "_t2", t + "_t3"]) ASSETS[k] = { src: `assets/style/v2/buildings/${t}.webp`, pivotX: 0.500, own: true };
+    MJB.fit[t + "_t1"] = f / { range: .95, hideout: .95, dojo: .92 }[t];   // divide out BUILDINGS[t].fit
+  }
   MJB.fit.house_t1 = 1.330;
   MJB.fit.keep_t1 = 1.063;
   MJB.fit.farm_kura_t1 = 1.341;
@@ -3177,6 +3182,8 @@ function drawEdgeCloudsC(na) {
 function makeVariants() {
   if (IS_BOARD_C || STYLE_V2) {
     for (const [id, a] of Object.entries(ASSETS)) {
+      // the range/hideout/drill-yard paintings carry a tan earth yard that the paper-stripper would eat
+      if (a.src && /v2\/buildings\/(range|hideout|dojo)\.webp$/.test(a.src)) continue;
       if (a.wpp && !a.iso && !a.ink && !a.setpiece && IMG[id] && IMG[id].width > 4) {
         IMG[id] = cleanUnitPaperForGold(IMG[id], id);
       }
@@ -3184,7 +3191,7 @@ function makeVariants() {
   }
   if (IS_BOARD_C) {
     const propAndLegacyRe = STYLE_V2
-      ? /^(pine|pine2|win_pine|aut_pine|sc_bamboo|aut_bamboo|sc_maple|aut_maple|win_maple|spr_cherry|sc_deadtree|sc_shrub|sc_grass|sc_reeds|sc_pond|aut_pile|fxw_tree_up|fxw_tree_lean|fxw_tree_fall|rocks|sc_rocks|bale|farm_bales_s|farm_bales_l|farm_rack0|farm_rack1|vp_|pal_wall_a|pal_wall_b|pal_corner|pal_gate|pal_gate_open|sp_|range_|hideout_|dojo_|gra_scaffold|sf_|dmg_|house_sf|house_dmg|keep_dmg|tower_dmg|smith_sf|tower_sf|lumber_sf)/
+      ? /^(pine|pine2|win_pine|aut_pine|sc_bamboo|aut_bamboo|sc_maple|aut_maple|win_maple|spr_cherry|sc_deadtree|sc_shrub|sc_grass|sc_reeds|sc_pond|aut_pile|fxw_tree_up|fxw_tree_lean|fxw_tree_fall|rocks|sc_rocks|bale|farm_bales_s|farm_bales_l|farm_rack0|farm_rack1|vp_|pal_wall_a|pal_wall_b|pal_corner|pal_gate|pal_gate_open|sp_|dojo_scaffold|dojo_damaged|gra_scaffold|sf_|dmg_|house_sf|house_dmg|keep_dmg|tower_dmg|smith_sf|tower_sf|lumber_sf)/
       : /^(pine|pine2|win_pine|aut_pine|sc_bamboo|aut_bamboo|sc_maple|aut_maple|win_maple|spr_cherry|sc_deadtree|sc_shrub|sc_grass|sc_reeds|sc_pond|aut_pile|fxw_tree_up|fxw_tree_lean|fxw_tree_fall|rocks|sc_rocks|bale|farm_bales_s|farm_bales_l|farm_rack0|farm_rack1|vp_|pal_wall_a|pal_wall_b|pal_corner|pal_gate|pal_gate_open|sp_|range_|hideout_|dojo_|stable_|temple_|gra_scaffold|sf_|dmg_|house_sf|house_dmg|keep_dmg|tower_dmg|smith_sf|tower_sf|lumber_sf)/;
     const cleanedBySrc = new Map();
     for (const id of Object.keys(IMG)) {
@@ -3195,10 +3202,6 @@ function makeVariants() {
         }
         IMG[id] = cleanedBySrc.get(cacheKey);
       }
-    }
-  } else if (STYLE_V2) {
-    for (const id of ["hideout_t1", "hideout_t2", "hideout_t3"]) {
-      if (IMG[id] && IMG[id].width > 4) IMG[id] = cleanPropOrLegacyBldgForGold(IMG[id], id);
     }
   }
   for (const id of Object.keys(ASSETS).filter(k => k.startsWith("vp_"))) NIGHT_IMG[id] = tinted(IMG[id], "rgb(31,38,51)", .58);
@@ -3849,7 +3852,7 @@ function drawIsoBuildingV2(b, d, na) {
   else if (b.upg) bar(b.upg.t / b.upg.time, "#C8372D");
   if (b.hp < b.maxHp && b.progress >= 1 && b.type !== "keep") hpBar(s.x, s.y + (b.upg ? 14 : 6), b.hp / b.maxHp, false, 44);
 }
-const V2_ART = new Set(["house", "keep", "granary", "lumber", "smith", "tower", "temple", "stable"]);
+const V2_ART = new Set(["house", "keep", "granary", "lumber", "smith", "tower", "temple", "stable", "range", "hideout", "dojo"]);
 function drawIsoBuilding(b, d, na) {
   if (STYLE_V2 && V2_ART.has(b.type)) return drawIsoBuildingV2(b, d, na);
   const f = iso(b.tx + b.w, b.ty + b.h), s = toScreen(f.X, f.Y);
