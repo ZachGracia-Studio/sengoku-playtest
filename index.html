@@ -1436,6 +1436,20 @@ function upgradeBlock(b) {
   return null;
 }
 
+/* ---------- sound hooks ----------
+   The game ships silent for now. Every sound event calls sfx(name). To add audio, drop a file in
+   assets/sfx/ and list it in SFX_FILES, e.g.  build_complete: "assets/sfx/build_complete.ogg".
+   Events: build_start build_complete upgrade_start upgrade_complete recruit hit_melee hit_building
+   arrow_loose death_soldier death_yokai building_destroyed keep_falls night_falls dawn victory
+   defeat ui_tap tap. Repeats of the same sound inside 70 ms are skipped so a melee doesn't stack. */
+const SFX_FILES = {};
+const SFX_CACHE = {}, SFX_LAST = {};
+function sfx(name) {
+  const src = SFX_FILES[name]; if (!src) return;
+  const now = performance.now(); if (now - (SFX_LAST[name] || 0) < 70) return; SFX_LAST[name] = now;
+  try { const a = (SFX_CACHE[name] ||= new Audio(src)).cloneNode(); a.volume = 0.7; a.play().catch(() => {}); } catch (e) {}
+}
+
 /* ---------- commands (UI and tests both go through these) ---------- */
 const CMD = {
   build(type, tx, ty) {
@@ -1445,7 +1459,7 @@ const CMD = {
     if (S.rice < d.cost) return "rice";
     if (S.wood < woodOf(d)) return "wood";
     if (!canPlace(type, tx, ty)) return inLands(tx + d.w / 2, ty + d.h / 2) ? "blocked" : "border";
-    S.rice -= d.cost; S.wood -= woodOf(d); addBuilding(type, tx, ty); S.stats.built++; S.log.builds[type] = (S.log.builds[type] || 0) + 1;
+    S.rice -= d.cost; S.wood -= woodOf(d); addBuilding(type, tx, ty); sfx("build_start"); S.stats.built++; S.log.builds[type] = (S.log.builds[type] || 0) + 1;
     repathAll();
     return "ok";
   },
@@ -1453,7 +1467,7 @@ const CMD = {
     const b = S.buildings.find(o => o.id === id); if (!b || S.over) return "invalid";
     const why = upgradeBlock(b); if (why) return why;
     const next = BUILDINGS[b.type].tiers[b.tier + 1];
-    S.rice -= next.cost; S.wood -= upWood(next); b.upg = { t: 0, time: next.time };
+    S.rice -= next.cost; S.wood -= upWood(next); b.upg = { t: 0, time: next.time }; sfx("upgrade_start");
     return "ok";
   },
   recruit(type) {
@@ -1466,7 +1480,7 @@ const CMD = {
     if (popUsed() + d.pop > popCap()) return "pop";
     if (RULES.train) {   // EXP-01: pay and reserve the slot now; the soldier musters when training finishes
       const b = at.reduce((m, o) => (o.queue || []).length < (m.queue || []).length ? o : m, at[0]);
-      (b.queue ||= []).push({ type, t: 0, time: trainTime(type), cost: costOf(type) }); S.rice -= costOf(type);
+      (b.queue ||= []).push({ type, t: 0, time: trainTime(type), cost: costOf(type) }); S.rice -= costOf(type); sfx("recruit");
       if (S.phase === "night") S.log.nightQueued = (S.log.nightQueued || 0) + 1;
       return { queued: b };
     }
@@ -1722,7 +1736,7 @@ function planNight() {
 
 function beginNight() {
   if (!S.plan) planNight();
-  S.phase = "night"; S.night++; S.phaseT = 0;
+  S.phase = "night"; S.night++; S.phaseT = 0; sfx("night_falls");
   S.nightLog = { n: S.night, t0: S.t, k0: S.stats.killed, l0: S.stats.lost };
   S.spawnQueue = S.plan; S.plan = null;
   S.units.forEach(u => { if (u.worker && !u.builder) u.hidden = true; });
@@ -1740,7 +1754,7 @@ function logNight() {   // one line per night for the playtest report: night, se
 function endNight() {
   S.omen = 0; logNight();
   if (S.night >= CH.nights) { finish(true); return; }
-  S.phase = "day"; S.day++; S.phaseT = CH.dayLength;
+  S.phase = "day"; S.day++; S.phaseT = CH.dayLength; sfx("dawn");
   S.units.forEach(u => { if (u.worker) u.hidden = false; });
   dawnEvent();
   if (S.night === 1) advisor.say("We held through the first night. The valley will remember this, my lord.", { key: "held1", face: "proud" });
@@ -1752,7 +1766,7 @@ function endNight() {
 }
 function finish(win) {
   if (S.over) return;
-  S.over = win ? "win" : "lose"; S.selected.clear();
+  S.over = win ? "win" : "lose"; S.selected.clear(); sfx(win ? "victory" : "defeat");
   if (win && !CH.sandbox) progress.markDone(CH.id);
   logNight(); playtest.run(win ? "won" : "lost");
   ui.end(win);
@@ -1802,11 +1816,11 @@ function step() {
   for (const b of S.buildings) {
     if (b.progress < 1) {
       b.progress = Math.min(1, b.progress + DT / BUILDINGS[b.type].buildTime);
-      if (b.progress >= 1) { if (BUILDINGS[b.type].worker) addWorker(b); raiseFx(b, null); }
+      if (b.progress >= 1) { if (BUILDINGS[b.type].worker) addWorker(b); raiseFx(b, null); sfx("build_complete"); }
     } else if (b.upg) {
       b.upg.t += DT;
       if (b.upg.t >= b.upg.time) {
-        b.tier++; b.upg = null; const t = tierOf(b);
+        b.tier++; b.upg = null; sfx("upgrade_complete"); const t = tierOf(b);
         b.hp += t.hp - b.maxHp; b.maxHp = t.hp; S.stats.upgraded++;
         raiseFx(b, TIER_KANJI[b.tier]);
         if (b.type === "dojo") { const un = BUILDINGS.dojo.tiers[b.tier].unlocks; if (un) ui.flash(`${UNITS[un[0]].name} unlocked`); }
@@ -1837,12 +1851,13 @@ function step() {
   separate();
   stepProjectiles();
   for (const u of S.units) if (!u.dead && !u.worker && u.hp <= 0) {
-    u.dead = true; u.deadT = S.t; addDecal(u.x, u.y, u.team === "E" ? .9 : .7 * Math.sqrt(u.size));
+    u.dead = true; u.deadT = S.t; addDecal(u.x, u.y, u.team === "E" ? .9 : .7 * Math.sqrt(u.size)); sfx(u.team === "E" ? "death_yokai" : "death_soldier");
     if (u.team === "E") { S.stats.killed++; if (S.phase === "night" && !S.firstKill) { S.firstKill = true; hitStop = performance.now() + 110; } } else S.stats.lost += u.size;
     S.selected.delete(u.id);
   }
   S.units = S.units.filter(u => !(u.dead && S.t - u.deadT > (ANIM[u.type] ? ANIM[u.type].linger : .7)));
   for (const b of [...S.buildings]) if (b.hp <= 0) {
+    sfx(b.type === "keep" ? "keep_falls" : "building_destroyed");
     if (b.type === "keep") { removeBuilding(b); finish(false); return; }
     removeBuilding(b); repathAll();
   }
@@ -2061,13 +2076,13 @@ function separate() {
 }
 function hit(t, dmg, kind, face = 1) {
   if (tech("wall") && t.type && BUILDINGS[t.type] && (t.type === "keep" || BUILDINGS[t.type].palisade)) dmg *= .7;
-  t.hp -= dmg; t.hitT = S.t;
+  t.hp -= dmg; t.hitT = S.t; sfx(t.type && BUILDINGS[t.type] ? "hit_building" : "hit_melee");
   if (t.type === "keep") S.keepHitT = S.t;
   const p = aimPoint(t);
   S.fx.push({ kind: kind || "spark", x: p.x, y: p.y, t: S.t, life: kind ? .26 : .35, rot: (rnd() - .5) * 1.2, v: Math.floor(rnd() * 3), face });
 }
 function fire(from, target, dmg, size = 1) {
-  const p = aimPoint(target), dist = hypot(p.x - from.x, p.y - from.y);
+  const p = aimPoint(target), dist = hypot(p.x - from.x, p.y - from.y); sfx("arrow_loose");
   S.projectiles.push({ x0: from.x, y0: from.y, z0: from.z, target, dmg, t0: S.t, dur: Math.max(.2, dist / 9), last: { ...p }, n: Math.min(3, size) });
 }
 function stepProjectiles() {
@@ -4925,6 +4940,7 @@ cv.addEventListener("wheel", e => {
 window.addEventListener("keydown", e => { if (e.key === "d" || e.key === "D") toggleDev(); if (e.key === " " && running) pause(!paused); });
 
 function onTap(sx, sy) {
+  sfx("tap");
   if (!S || S.over || paused) return;
   if (ui.place) {
     const t = screenToTile(sx, sy), d = BUILDINGS[ui.place.type];
@@ -5219,7 +5235,7 @@ const ui = {
   },
 };
 $("bar").addEventListener("click", e => {
-  const a = e.target.closest("[data-act]"); if (!a || a.disabled) return;
+  const a = e.target.closest("[data-act]"); if (!a || a.disabled) return; sfx("ui_tap");
   const act = a.dataset.act;
   if (act === "build") ui.openSheet("sheetBuild");
   if (act === "recruit") ui.openSheet("sheetRecruit");
