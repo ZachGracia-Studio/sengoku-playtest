@@ -2181,6 +2181,21 @@ function tinted(im, color, alpha = 1) {
   g.globalAlpha = alpha; g.fillStyle = color; g.fillRect(0, 0, c.width, c.height); return c;
 }
 const INK_RIM_IMG = {};
+const UNIT_RIM = {};
+function unitRimOf(id, night) {   // ground-tone cut-out (separates overlapping figures) + thin ink rim, same frame size as the sprite
+  const k = id + (night ? "|n" : "|d");
+  if (UNIT_RIM[k] !== undefined) return UNIT_RIM[k];
+  const im = IMG[id], a = ASSETS[id];
+  if (!im || !im.width || !a) return (UNIT_RIM[k] = null);
+  const dh = a.dispH ? a.dispH : a.dispW * im.height / im.width, k1 = im.height / Math.max(1, dh);   // image px per world px
+  const c = document.createElement("canvas"); c.width = im.width; c.height = im.height; const g = c.getContext("2d");
+  const cut = getCutImg(id, night), ink = getInkRimImg(id);
+  g.globalAlpha = night ? .45 : .52;
+  for (const [dx, dy] of [[-1.7, 0], [1.7, 0], [0, -1.5], [0, 1.2], [-1.2, -1.2], [1.2, -1.2]]) g.drawImage(cut, dx * k1, dy * k1);
+  g.globalAlpha = night ? .44 : .36;
+  for (const [dx, dy] of [[-.65, 0], [.65, 0], [0, -.65], [0, .65]]) g.drawImage(ink, dx * k1, dy * k1);
+  return (UNIT_RIM[k] = c);
+}
 const CUT_IMG = {};
 function getCutImg(id, night) {   // flat ground-tone silhouette used as a separation rim
   const k = id + (night ? "|n" : "|d");
@@ -4151,22 +4166,10 @@ function drawUnit(u, na) {
     const spread = STYLE_V2 ? 1.12 : 1;   // v2: formations stand a little looser so figures read individually
     const fx = o[0] * (u.size > 1 ? uSc * spread : 0), fy = o[1] * (u.size > 1 ? uSc * spread : 1);
     if (!a0.floatY) shadow(p.X + fx, p.Y + fy, (cav ? 24 : u.type === "brute" || u.type === "oni" ? 22 : 13) * scale);
-    // crowd separation: a soft ground-coloured cut-out just behind each figure, so overlapping
-    // soldiers in a bunched group read as separate silhouettes rather than one black mass
+    // crowd separation + ink rim, baked into one sprite per frame (see unitRimOf) so it costs a single draw
     if (IS_BOARD_C) {
-      const cut = getCutImg(art, na > .5);
-      if (cut) for (const [dx, dy] of [[-1.7, 0], [1.7, 0], [0, -1.5], [0, 1.2], [-1.2, -1.2], [1.2, -1.2]])
-        drawSprite(art, p.X + fx, p.Y + fy, { img: cut, face: u.face, alpha: alpha * (na > .5 ? .45 : .52), ox: ox + dx, oy: oy + dy, rot, scale });
-    }
-    // C3 (d): Thin sumi-ink rim (replaces white paper halo under c1)
-    if (IS_BOARD_C) {
-      const rim = getInkRimImg(art);
-      if (rim) {
-        const ra = alpha * (na > 0.5 ? 0.44 : 0.36);
-        for (const [dx, dy] of [[-0.65, 0], [0.65, 0], [0, -0.65], [0, 0.65]]) {
-          drawSprite(art, p.X + fx, p.Y + fy, { img: rim, face: u.face, alpha: ra, ox: ox + dx, oy: oy + dy, rot, scale });
-        }
-      }
+      const rim = unitRimOf(art, na > .5);
+      if (rim) drawSprite(art, p.X + fx, p.Y + fy, { img: rim, face: u.face, alpha, ox, oy, rot, scale });
     }
     drawSprite(art, p.X + fx, p.Y + fy, { face: u.face, alpha, ox, oy, rot, scale });
   }
