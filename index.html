@@ -3501,9 +3501,9 @@ function render() {
   if (season().name === "Winter") { ctx.save(); ctx.globalAlpha = .32 * (1 - na * .6); ctx.fillStyle = "#f4f6fa"; ctx.fillRect(o.x, o.y, tw, th); ctx.globalAlpha = .08; ctx.fillStyle = "#5a6a8a"; ctx.fillRect(o.x, o.y, tw, th); ctx.restore(); }
   if (na > 0) { ctx.globalAlpha = na; ctx.drawImage(terrainNight, o.x, o.y, tw, th); ctx.globalAlpha = 1; }
 
-  drawLands(na);
+  if (FOG_ON) drawGoldFog(na); else drawLands(na);
   if (TEST_FLAG === "board" && TEST_SUB === "a1") drawA1EdgeFog(na);
-  if (IS_BOARD_C) drawEdgeCloudsC(na);
+  if (IS_BOARD_C && !FOG_ON) drawEdgeCloudsC(na);
   }
   if (na > .05 && !OVL) {
     ctx.save(); ctx.globalCompositeOperation = "screen";
@@ -3563,7 +3563,8 @@ function render() {
 
   const list = [];
   for (const b of S.buildings) list.push({ b });
-  for (const p of S.props) list.push({ p });
+  const FOG_T = FOG_ON ? territory() : null;
+  for (const p of S.props) if (!FOG_T || !FOG_T.length || LANDMARKS[p.art] || inLands(p.tx + (p.w || 1) / 2, p.ty + (p.h || 1) / 2, FOG_T)) list.push({ p });
   for (const b of S.buildings) if (BUILDINGS[b.type].paddy && done(b) && b.rack) {
     list.push({ p: { deco: true, art: S.t - b.rack.fullT < 9 ? "farm_rack1" : "farm_rack0", tx: b.rack.x, ty: b.rack.y, w: 1, h: 1 } });
     const bx = b.tx + b.w, by = b.ty + b.h;
@@ -4000,6 +4001,76 @@ function drawYards(na) {
       const a = r() * 6.28, rr = R * (.7 + r() * .3), x = s.x + Math.cos(a) * rr, y = s.y + Math.sin(a) * rr * TH / TW, w = 18 * cam.z * (.8 + r() * .5);
       ctx.save(); ctx.globalAlpha = na > .5 ? .35 : .7; ctx.drawImage(tuft, x - w / 2, y - w * tuft.height / tuft.width, w, w * tuft.height / tuft.width); ctx.restore(); }
   }
+}
+
+/* ---------- v2 fog of war: unexplored land lies under gold cloud (kin-un) ----------
+   As on the Rakuchu rakugai-zu screens, what isn't "shown" is veiled by layered gold
+   cloud. Everything outside the player's territory (keep domain + claimed landmarks)
+   is covered; the cloud rolls back as territory grows. Units are drawn above it so
+   approaching yokai stay readable; trees and rocks out there are hidden. */
+const FOG_ON = STYLE_V2;
+let fogTex = null, fogCv = null;
+function makeFogTex() {
+  const N = 1024, c = document.createElement("canvas"); c.width = c.height = N; const g = c.getContext("2d");
+  let seed = 11; const r = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  g.fillStyle = "#C7AD70"; g.fillRect(0, 0, N, N);
+  for (let i = 0; i < 260; i++) { const x = r() * N, y = r() * N, w = 2 + r() * 6; g.fillStyle = `rgba(238,218,160,${.10 + r() * .14})`; g.fillRect(x, y, w, w); }   // sparse gold-leaf flecks
+  // cloud banks: a flat base with a scalloped (lobed) top edge, like Kano-school kin-un
+  for (let b = 0; b < 5; b++) {
+    const y = (b + .5) / 5 * N + (r() - .5) * 60, h = 34 + r() * 26, x0 = r() * N, len = N * (.55 + r() * .3);
+    for (const dx of [-N, 0, N]) {
+      const X = x0 + dx, lob = 9 + Math.floor(r() * 5), lw = len / lob;
+      g.beginPath(); g.moveTo(X, y + h / 2);
+      for (let k = 0; k < lob; k++) { const cx = X + lw * (k + .5), rr = lw * .62 * (.85 + ((k * 37 + b) % 5) / 14); g.arc(cx, y - h * .12, rr, Math.PI, 0, false); }
+      g.lineTo(X + len, y + h / 2); g.closePath();
+      g.fillStyle = "rgba(226,204,144,.62)"; g.fill(); g.lineWidth = 1.4; g.strokeStyle = "rgba(70,54,28,.34)"; g.stroke();
+    }
+  }
+  return c;
+}
+function drawGoldFog(na) {
+  const T = territory(); if (!T.length) return;
+  fogTex ||= makeFogTex();
+  if (!fogCv || fogCv.width !== cv.width || fogCv.height !== cv.height) { fogCv = document.createElement("canvas"); fogCv.width = cv.width; fogCv.height = cv.height; }
+  const g = fogCv.getContext("2d"), k = cv.width / vw;
+  g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, fogCv.width, fogCv.height); g.scale(k, k);
+  const o = toScreen(0, 0), pat = g.createPattern(fogTex, "repeat");
+  pat.setTransform(new DOMMatrix().translate(o.x, o.y).scale(cam.z * .9));
+  g.fillStyle = pat; g.fillRect(0, 0, vw, vh);
+  if (na > 0) { g.fillStyle = `rgba(22,28,42,${.72 * na})`; g.fillRect(0, 0, vw, vh); }
+  // cut the explored land out with a lobed (cloud-edged) boundary
+  const lobes = [];
+  for (const t of T) {
+    const n = Math.max(18, Math.round(t.r * 7));
+    for (let i = 0; i < n; i++) {
+      const a = i / n * Math.PI * 2, rr = t.r - .55 + .35 * Math.sin(i * 2.3 + t.x), x = t.x + Math.cos(a) * rr, y = t.y + Math.sin(a) * rr;
+      lobes.push({ x, y, r: .9 + .35 * ((i * 7919) % 5) / 5, t });
+    }
+  }
+  g.globalCompositeOperation = "destination-out"; g.fillStyle = "#000";
+  const ell = (x, y, rad) => { const q = iso(x, y), sp = toScreen(q.X, q.Y), rx = rad * TW / Math.SQRT2 * cam.z; g.beginPath(); g.ellipse(sp.x, sp.y, rx, rx * TH / TW, 0, 0, 7); g.fill(); };
+  for (const t of T) ell(t.x, t.y, t.r - .5);
+  for (const l of lobes) ell(l.x, l.y, l.r);
+  // off-map is always cloud: paint fog back into the cut wherever it falls outside the map diamond
+  { const pts = [iso(0, 0), iso(MAP, 0), iso(MAP, MAP), iso(0, MAP)].map(p => toScreen(p.X, p.Y));
+    g.beginPath(); g.rect(0, 0, vw, vh); g.moveTo(pts[0].x, pts[0].y); for (const q of pts.slice(1)) g.lineTo(q.x, q.y); g.closePath();
+    g.globalCompositeOperation = "destination-over"; g.fillStyle = pat; g.fill("evenodd"); if (na > 0) { g.fillStyle = `rgba(22,28,42,${.72 * na})`; g.fill("evenodd"); } }
+  g.globalCompositeOperation = "source-over";
+  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(fogCv, 0, 0); ctx.restore();
+  // ink outline of the cloud edge: lobe arcs that face outward and aren't inside explored land
+  ctx.save(); ctx.lineCap = "round"; ctx.strokeStyle = na > .5 ? "rgba(237,228,211,.45)" : "rgba(40,32,20,.55)"; ctx.lineWidth = Math.max(1, 1.5 * cam.z);
+  for (const l of lobes) {
+    ctx.beginPath(); let on = false;
+    for (let i = 0; i <= 24; i++) {
+      const a = i / 24 * Math.PI * 2, x = l.x + Math.cos(a) * l.r, y = l.y + Math.sin(a) * l.r;
+      const covered = x < 0 || y < 0 || x > MAP || y > MAP || T.some(t => hypot(x - t.x, y - t.y) < t.r - .5) || lobes.some(m => m !== l && hypot(x - m.x, y - m.y) < m.r - .02);
+      const q = iso(x, y), sp = toScreen(q.X, q.Y);
+      if (covered) { on = false; continue; }
+      if (!on) { ctx.moveTo(sp.x, sp.y); on = true; } else ctx.lineTo(sp.x, sp.y);
+    }
+    ctx.stroke();
+  }
+  ctx.restore();
 }
 let landsCv = null;
 function drawLands(na) {
