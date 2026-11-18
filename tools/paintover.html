@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sengoku — 3D Isometric Paint-Over Guide Generator (T1c)</title>
+<style>
+  :root { --washi: #EDE4D3; --ink: #1B1B1F; --verm: #C8372D; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: #222226; color: var(--washi);
+    font-family: system-ui, -apple-system, sans-serif;
+    display: flex; height: 100vh; overflow: hidden;
+  }
+  #sidebar {
+    width: 320px; background: #18181B; border-right: 1px solid #333;
+    display: flex; flex-direction: column; padding: 16px; gap: 12px; overflow-y: auto;
+  }
+  h1 { font-size: 16px; margin: 0; color: var(--washi); letter-spacing: 0.02em; }
+  .sub { font-size: 12px; color: #A09D96; line-height: 1.4; }
+  .btn-group { display: flex; flex-direction: column; gap: 5px; }
+  .bldg-btn {
+    background: #27272C; color: #E5DEC9; border: 1px solid #3A3A42;
+    padding: 8px 10px; text-align: left; font-size: 13px; cursor: pointer;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .bldg-btn:hover { background: #323238; }
+  .bldg-btn.active { background: var(--verm); color: #fff; border-color: #E04A3F; font-weight: 600; }
+  .bldg-btn span.meta { font-size: 11px; opacity: 0.8; font-family: monospace; }
+  .actions { display: flex; flex-direction: column; gap: 8px; margin-top: auto; padding-top: 12px; border-top: 1px solid #333; }
+  button.primary, button.secondary {
+    padding: 10px 12px; font-size: 13px; font-weight: 600; cursor: pointer; border: none;
+  }
+  button.primary { background: var(--verm); color: #fff; }
+  button.primary:hover { background: #d94136; }
+  button.secondary { background: #323238; color: var(--washi); border: 1px solid #4A4A52; }
+  button.secondary:hover { background: #3E3E46; }
+  .toggles { display: flex; flex-direction: column; gap: 6px; font-size: 12px; background: #202024; padding: 10px; border: 1px solid #333; }
+  .toggles label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+  #stage {
+    flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 20px; position: relative; overflow: auto;
+  }
+  #canvasWrap {
+    position: relative; width: min(82vh, calc(100vw - 380px)); height: min(82vh, calc(100vw - 380px));
+    border: 1px solid #444; box-shadow: 0 12px 36px rgba(0,0,0,0.45);
+  }
+  #canvasWrap.checker {
+    background-image:
+      linear-gradient(45deg, #2b2b30 25%, transparent 25%),
+      linear-gradient(-45deg, #2b2b30 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #2b2b30 75%),
+      linear-gradient(-45deg, transparent 75%, #2b2b30 75%);
+    background-size: 24px 24px;
+    background-position: 0 0, 0 12px, 12px -12px, -12px 0;
+    background-color: #202024;
+  }
+  #canvasWrap.washi { background: #EDE4D3; }
+  canvas#gl { width: 100%; height: 100%; display: block; position: relative; z-index: 2; }
+  img#ghostImg {
+    position: absolute; left: 0; top: 0; width: 100%; height: auto;
+    pointer-events: none; z-index: 1; opacity: 0.38; display: none;
+  }
+  #hudInfo {
+    margin-top: 10px; font-family: monospace; font-size: 12px; color: #C8C2B4;
+    background: #18181B; padding: 6px 12px; border: 1px solid #333;
+  }
+</style>
+</head>
+<body>
+  <div id="sidebar">
+    <div>
+      <h1>SENGOKU PAINT-OVER GUIDES</h1>
+      <div class="sub">Exact Game Camera: Orthographic, 45° Azimuth, 35.32° Elevation (TW=64, TH=37, ratio=0.578125). Native 2048×2048 transparent PNGs.</div>
+    </div>
+    <div class="toggles">
+      <label><input type="radio" name="bg" value="checker" checked> Transparent Checkerboard</label>
+      <label><input type="radio" name="bg" value="washi"> Washi Paper (#EDE4D3) Preview</label>
+      <label><input type="checkbox" id="chkGhost"> Show Current b_*.webp Ghost Underlay</label>
+      <label><input type="checkbox" id="chkLabels" checked> Include Technical Scale Legend on Export</label>
+    </div>
+    <div class="btn-group" id="bldgList"></div>
+    <div class="actions">
+      <button class="secondary" id="btnDownloadOne">Download Current PNG (2048×2048)</button>
+      <button class="primary" id="btnDownloadAll">Download All (13 PNGs)</button>
+      <div id="statusTxt" class="sub" style="text-align:center;">Ready</div>
+    </div>
+  </div>
+  <div id="stage">
+    <div id="canvasWrap" class="checker">
+      <img id="ghostImg" alt="">
+      <canvas id="gl" width="2048" height="2048"></canvas>
+    </div>
+    <div id="hudInfo">Loading Three.js...</div>
+  </div>
+
+<script type="module">
+import * as THREE from "../vendor/three.module.js";
+
+const TW = 64, TH = 37;
+const ISO_EL = Math.asin((TH / 2) / (TW / 2)); // 35.3204°
+const SIZE = 2048;
+
+// Exact in-game footprint diamond width inside the 2048x2048 frame:
+// We set diamond width = 1600 px (centered at x = 1024, L.x = 224, R.x = 1824)
+// and anchor the front corner F(w/2, 0, h/2) at y = 1900 px (leaving 148 px bottom margin for ground strokes).
+const GUIDE_DIAMOND_W = 1600;
+const GUIDE_FRONT_X = 1024;
+const GUIDE_FRONT_Y = 1900;
+
+// Human soldier target height in world units (1 tile = 1.0 unit):
+// A 1-storey house eave is ~0.55 units above ground; target soldier is door height = 0.34..0.44 units.
+const HUMAN_H = 0.42;
+
+export const SPECS = [
+  { id: "keep_t1", bId: "keep1", type: "keep", tier: 0, name: "Keep Tier 一 (Yakata)", w: 3, h: 3, fit: 1.22, door: [0, 0, 1.40, "z"] },
+  { id: "keep_t2", bId: "keep2", type: "keep", tier: 1, name: "Keep Tier 二 (Yagura)", w: 3, h: 3, fit: 1.22, door: [0, 0, 1.32, "z"] },
+  { id: "keep_t3", bId: "keep3", type: "keep", tier: 2, name: "Keep Tier 三 (Tenshu)", w: 3, h: 3, fit: 1.22, door: [0, 0, 1.32, "z"] },
+  { id: "dojo",    bId: "dojo",    type: "dojo",    tier: 0, name: "Drill Yard (Dōjō)",      w: 2, h: 2, fit: 0.92, door: [0, 0, 0.88, "z"] },
+  { id: "granary", bId: "kura",    type: "granary", tier: 0, name: "Rice Storehouse (Kura)", w: 2, h: 2, fit: 0.85, door: [-0.25, 0, 0.12, "z"] },
+  { id: "lumber",  bId: "lumber",  type: "lumber",  tier: 0, name: "Lumber Camp",            w: 2, h: 2, fit: 0.95, door: [0.15, 0, 0.25, "z"] },
+  { id: "house",   bId: "house",   type: "house",   tier: 0, name: "House (Minka)",          w: 1, h: 1, fit: 1.15, door: [0, 0, 0.30, "z"] },
+  { id: "tower",   bId: "tower",   type: "tower",   tier: 0, name: "Watchtower (Yagura)",    w: 1, h: 1, fit: 1.4375, door: [0, 0, 0.34, "z"] },
+  { id: "smith",   bId: "smith",   type: "smith",   tier: 0, name: "Blacksmith (Kajiya)",    w: 2, h: 2, fit: 0.95, door: [0, 0, 0.50, "z"] },
+  { id: "stable",  bId: "stable",  type: "stable",  tier: 0, name: "Stable (Umaya)",         w: 2, h: 2, fit: 0.98, door: [-0.2, 0, 0.32, "z"] },
+  { id: "range",   bId: "range",   type: "range",   tier: 0, name: "Archery Range",          w: 2, h: 2, fit: 0.95, door: [0, 0, 0.85, "z"] },
+  { id: "temple",  bId: "temple",  type: "temple",  tier: 0, name: "Temple (Tera)",          w: 2, h: 2, fit: 0.92, door: [0, 0, 0.88, "z"] },
+  { id: "hideout", bId: "hideout", type: "hideout", tier: 0, name: "Shinobi Hideout",        w: 2, h: 2, fit: 0.95, door: [-0.2, 0, 0.20, "z"] }
+];
+
+const glCanvas = document.getElementById("gl");
+const offGL = document.createElement("canvas");
+offGL.width = SIZE; offGL.height = SIZE;
+
+const renderer = new THREE.WebGLRenderer({ canvas: offGL, alpha: true, antialias: true, preserveDrawingBuffer: true });
+renderer.setSize(SIZE, SIZE, false);
+renderer.setPixelRatio(1);
+renderer.setClearColor(0x000000, 0);
+
+const scene = new THREE.Scene();
+const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 200);
+
+// Lights for clear architectural plane separation
+const amb = new THREE.AmbientLight(0xffffff, 0.72);
+const dir1 = new THREE.DirectionalLight(0xfffbf0, 0.65);
+dir1.position.set(18, 32, 10);
+const dir2 = new THREE.DirectionalLight(0xcfd8e8, 0.28);
+dir2.position.set(-16, 14, 22);
+scene.add(amb, dir1, dir2);
+
+const rootGroup = new THREE.Group();
+scene.add(rootGroup);
+
+const M4 = () => new THREE.Matrix4(), E3 = (x, y, z) => new THREE.Euler(x, y, z);
+function place(g, x, y, z, rx = 0, ry = 0, rz = 0, s = 1) {
+  const m = M4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(E3(rx, ry, rz)), new THREE.Vector3(s, s, s));
+  g.applyMatrix4(m);
+  return g;
+}
+
+class MassingKit {
+  constructor() { this.parts = []; }
+  add(g, hex, op = 0.54) { this.parts.push({ g, hex, op }); return this; }
+  box(x, y, z, sx, sy, sz, hex = 0x9A968E, top = 1, ry = 0, op = 0.54) {
+    const g = new THREE.BoxGeometry(sx, sy, sz);
+    const p = g.attributes.position;
+    if (top !== 1) for (let i = 0; i < p.count; i++) if (p.getY(i) > 0) { p.setX(i, p.getX(i) * top); p.setZ(i, p.getZ(i) * top); }
+    return this.add(place(g, x, y + sy / 2, z, 0, ry), hex, op);
+  }
+  cyl(x, y, z, r0, r1, h, hex = 0x8C877E, n = 8, rx = 0, rz = 0, op = 0.54) {
+    return this.add(place(new THREE.CylinderGeometry(r1, r0, h, n), x, y + h / 2, z, rx, 0, rz), hex, op);
+  }
+  roof(x, y, z, w, d, h, o = {}) {
+    const over = o.over ?? 0.2, sweep = o.sweep ?? 0.08, ridge = o.ridge ?? 0.38, thick = o.thick ?? 0.06, n = 6;
+    const slope = o.hex ?? 0x6E6C68, edge = 0x3A3937;
+    const W = w / 2 + over, D = d / 2 + over, R = W * ridge, ring = [];
+    const cs = [[-W, -D], [W, -D], [W, D], [-W, D]];
+    for (let k = 0; k < 4; k++) {
+      const [x0, z0] = cs[k], [x1, z1] = cs[(k + 1) % 4];
+      for (let i = 0; i < n; i++) {
+        const t = i / n;
+        ring.push([x0 + (x1 - x0) * t, sweep * (2 * t - 1) ** 4, z0 + (z1 - z0) * t]);
+      }
+    }
+    const top = ([px, , pz]) => [Math.abs(pz) >= D - 1e-6 ? Math.max(-R, Math.min(R, px * R / W)) : (px > 0 ? R : -R), h, 0];
+    const S1 = [], S2 = [], m = ring.length, T = (arr, ...v) => v.forEach(p => arr.push(p[0] + x, p[1] + y, p[2] + z));
+    for (let i = 0; i < m; i++) {
+      const j = (i + 1) % m, a = ring[i], b = ring[j], ta = top(a), tb = top(b), la = [a[0], a[1] - thick, a[2]], lb = [b[0], b[1] - thick, b[2]];
+      T(S1, a, b, tb); T(S1, a, tb, ta);
+      T(S2, la, lb, b); T(S2, la, b, a);
+    }
+    for (const [arr, hex] of [[S1, slope], [S2, edge]]) {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute("position", new THREE.Float32BufferAttribute(arr, 3));
+      g.computeVertexNormals();
+      this.add(g, hex, 0.56);
+    }
+    this.box(x, y + h - 0.02, z, 2 * R + 0.06, 0.06, 0.07, edge, 1, 0, 0.72);
+    return this;
+  }
+  storey(y, w, d, h, roofH, o = {}) {
+    this.box(0, y, 0, w, h, d, 0xDFDBD0, 1, 0, 0.52);
+    return this.roof(0, y + h, 0, w, d, roofH, o);
+  }
+}
+
+function buildMassing(spec) {
+  const K = new MassingKit();
+  const W = spec.w, H = spec.h, t = spec.tier || 0;
+  const thatchHouse = (w, dd, roofH = 0.85) => {
+    K.box(0, 0, 0, w + 0.12, 0.10, dd + 0.12, 0x9E9A90, 1, 0, 0.55);
+    K.box(0, 0.10, 0, w, 0.45, dd, 0xD8D2C5, 1, 0, 0.52);
+    K.roof(0, 0.55, 0, w, dd, roofH, { over: 0.16, sweep: 0.03, ridge: 0.45, thick: 0.08, hex: 0x7D786E });
+  };
+  const hall = (w, dd, h, roofH, o = {}) => {
+    K.box(0, 0, 0, w + 0.14, 0.14, dd + 0.14, 0x9E9A90, 1, 0, 0.55);
+    K.storey(0.14, w, dd, h, roofH, o);
+  };
+
+  switch (spec.type) {
+    case "keep":
+      if (t === 0) {
+        // Perimeter palisade walls + fortified yakata hall
+        const e = 1.40;
+        K.box(0, 0, -e, 2.8, 0.42, 0.06, 0x7A746B, 1, 0, 0.38);
+        K.box(-e, 0, 0, 0.06, 0.42, 2.8, 0x7A746B, 1, 0, 0.38);
+        K.box(e, 0, 0, 0.06, 0.42, 2.8, 0x7A746B, 1, 0, 0.38);
+        K.box(-0.88, 0, e, 1.05, 0.42, 0.06, 0x7A746B, 1, 0, 0.38);
+        K.box(0.88, 0, e, 1.05, 0.42, 0.06, 0x7A746B, 1, 0, 0.38);
+        // Gate lintel
+        K.box(0, 0.42, e, 0.80, 0.24, 0.12, 0x5C5852, 1, 0, 0.55);
+        hall(1.9, 1.5, 0.60, 0.55, { over: 0.20, sweep: 0.12 });
+      } else if (t === 1) {
+        K.box(0, 0, 0, 2.8, 0.70, 2.6, 0x9A968E, 0.84, 0, 0.56);
+        K.storey(0.70, 1.9, 1.6, 0.80, 0.40, { over: 0.22, sweep: 0.16 });
+        K.storey(1.90, 1.3, 1.1, 0.65, 0.55, { over: 0.20, sweep: 0.15 });
+      } else {
+        K.box(0, 0, 0, 2.9, 0.80, 2.6, 0x9A968E, 0.82, 0, 0.56);
+        K.storey(0.80, 2.0, 1.7, 0.88, 0.36, { over: 0.22, sweep: 0.19 });
+        K.storey(2.04, 1.5, 1.25, 0.72, 0.33, { over: 0.20, sweep: 0.17 });
+        K.storey(3.09, 1.05, 0.9, 0.63, 0.52, { over: 0.19, sweep: 0.16 });
+      }
+      break;
+    case "house":
+      thatchHouse(0.72, 0.56, 0.72);
+      break;
+    case "dojo": {
+      const e = W / 2 - 0.12;
+      K.box(0, 0, -e, 2 * e, 0.32, 0.05, 0x7A746B, 1, 0, 0.35);
+      K.box(-e, 0, 0, 0.05, 0.32, 2 * e, 0x7A746B, 1, 0, 0.35);
+      K.box(e, 0, 0, 0.05, 0.32, 2 * e, 0x7A746B, 1, 0, 0.35);
+      K.box(-0.58, 0, e, 0.60, 0.32, 0.05, 0x7A746B, 1, 0, 0.35);
+      K.box(0.58, 0, e, 0.60, 0.32, 0.05, 0x7A746B, 1, 0, 0.35);
+      K.box(-0.22, 0, -0.25, 1.05, 0.48, 0.78, 0xD8D2C5, 1, 0, 0.52);
+      K.roof(-0.22, 0.48, -0.25, 1.05, 0.78, 0.42, { over: 0.15, sweep: 0.08 });
+      break;
+    }
+    case "granary": {
+      const kura = (x, z, s) => {
+        K.box(x, 0, z, 0.68 * s, 0.12, 0.56 * s, 0x9A968E, 1, 0, 0.56);
+        K.box(x, 0.12, z, 0.60 * s, 0.58 * s, 0.48 * s, 0xE2DDD2, 1, 0, 0.54);
+        K.roof(x, 0.12 + 0.58 * s, z, 0.60 * s, 0.48 * s, 0.32 * s, { over: 0.10, sweep: 0.04, ridge: 0.5 });
+      };
+      kura(-0.25, -0.20, 1.25);
+      kura(0.48, 0.42, 0.85);
+      break;
+    }
+    case "lumber":
+      K.box(-0.25, 0, -0.25, 0.95, 0.48, 0.65, 0xC8C0B0, 1, 0, 0.48);
+      K.roof(-0.25, 0.48, -0.25, 0.95, 0.65, 0.34, { over: 0.12, sweep: 0.03 });
+      for (let i = 0; i < 4; i++) K.cyl(-0.45 + (i % 2) * 0.18, 0.08 + Math.floor(i / 2) * 0.14, 0.45, 0.07, 0.07, 0.72, 0x8C8275, 8, Math.PI / 2, 0, 0.55);
+      break;
+    case "tower":
+      K.box(0, 0, 0, 0.76, 0.38, 0.76, 0x9A968E, 0.86, 0, 0.56);
+      K.box(0, 0.38, 0, 0.58, 0.88, 0.58, 0xDFDBD0, 0.90, 0, 0.52);
+      K.box(0, 1.26, 0, 0.68, 0.24, 0.68, 0xC8C0B0, 1, 0, 0.54);
+      K.roof(0, 1.50, 0, 0.64, 0.64, 0.34, { over: 0.14, sweep: 0.08 });
+      break;
+    case "stable":
+      K.box(0, 0, -0.15, 1.55, 0.10, 0.88, 0x9A968E, 1, 0, 0.55);
+      K.box(0, 0.10, -0.15, 1.48, 0.45, 0.82, 0xD2CBBF, 1, 0, 0.52);
+      K.roof(0, 0.55, -0.15, 1.48, 0.82, 0.38, { over: 0.16, sweep: 0.05, ridge: 0.6 });
+      // Paddock fence in front
+      K.box(0, 0, 0.72, 1.50, 0.28, 0.04, 0x7A746B, 1, 0, 0.38);
+      break;
+    case "range":
+      K.box(0, 0, 0, 1.82, 0.18, 1.82, 0x9A968E, 1, 0, 0.48);
+      K.box(0, 0.18, -0.48, 1.65, 0.48, 0.52, 0xD8D2C5, 1, 0, 0.52);
+      K.roof(0, 0.66, -0.48, 1.65, 0.52, 0.28, { over: 0.14, sweep: 0.06, ridge: 0.68 });
+      for (const x of [-0.55, 0, 0.55]) K.cyl(x, 0.34, 0.65, 0.16, 0.16, 0.05, 0x7D786E, 12, Math.PI / 2, 0, 0.65);
+      break;
+    case "temple":
+      K.box(0, 0, 0, 1.86, 0.22, 1.86, 0x9A968E, 1, 0, 0.52);
+      K.box(0, 0.22, -0.08, 1.42, 0.50, 1.22, 0xE2DDD2, 1, 0, 0.52);
+      K.roof(0, 0.72, -0.08, 1.42, 1.22, 0.68, { over: 0.28, sweep: 0.18, ridge: 0.45 });
+      break;
+    case "hideout":
+      K.box(-0.18, 0, -0.18, 1.05, 0.10, 0.80, 0x9A968E, 1, 0, 0.52);
+      K.box(-0.18, 0.10, -0.18, 0.95, 0.45, 0.70, 0xD2CBBF, 1, 0, 0.52);
+      K.roof(-0.18, 0.55, -0.18, 0.95, 0.70, 0.74, { over: 0.16, sweep: 0.04, ridge: 0.45 });
+      K.box(0.55, 0, 0.48, 0.50, 0.34, 0.44, 0xC8C0B0, 1, 0, 0.48);
+      K.roof(0.55, 0.34, 0.48, 0.50, 0.44, 0.24, { over: 0.08, sweep: 0.02 });
+      break;
+    case "smith":
+      hall(1.22, 0.96, 0.50, 0.45, { over: 0.16, sweep: 0.07 });
+      K.box(0.45, 0.64, -0.20, 0.18, 0.72, 0.18, 0x8A857C, 1, 0, 0.60);
+      break;
+  }
+  return K.parts;
+}
+
+export function renderGuide(spec, includeLegend = true) {
+  while (rootGroup.children.length) rootGroup.remove(rootGroup.children[0]);
+
+  const W = spec.w, H = spec.h;
+
+  // 1. Light-grey footprint slab (y from -0.07 to 0)
+  const slabThick = 0.07;
+  const slabGeo = new THREE.BoxGeometry(W, slabThick, H);
+  slabGeo.translate(0, -slabThick / 2, 0);
+  const slabMat = new THREE.MeshLambertMaterial({ color: 0xD8D3C8, transparent: true, opacity: 0.88 });
+  const slabMesh = new THREE.Mesh(slabGeo, slabMat);
+  rootGroup.add(slabMesh);
+
+  const slabEdges = new THREE.LineSegments(
+    new THREE.EdgesGeometry(slabGeo),
+    new THREE.LineBasicMaterial({ color: 0x1B1B1F, transparent: true, opacity: 0.95 })
+  );
+  rootGroup.add(slabEdges);
+
+  // 2. Ground-tile grid on y = 0.002
+  const gridPts = [];
+  for (let x = -W / 2; x <= W / 2 + 1e-6; x += 1) {
+    gridPts.push(new THREE.Vector3(x, 0.002, -H / 2), new THREE.Vector3(x, 0.002, H / 2));
+  }
+  for (let z = -H / 2; z <= H / 2 + 1e-6; z += 1) {
+    gridPts.push(new THREE.Vector3(-W / 2, 0.002, z), new THREE.Vector3(W / 2, 0.002, z));
+  }
+  const gridGeo = new THREE.BufferGeometry().setFromPoints(gridPts);
+  rootGroup.add(new THREE.LineSegments(gridGeo, new THREE.LineBasicMaterial({ color: 0x1B1B1F, transparent: true, opacity: 0.55 })));
+
+  // Center axes & diagonals (faint)
+  const diagPts = [
+    new THREE.Vector3(-W / 2, 0.002, -H / 2), new THREE.Vector3(W / 2, 0.002, H / 2),
+    new THREE.Vector3(-W / 2, 0.002, H / 2), new THREE.Vector3(W / 2, 0.002, -H / 2)
+  ];
+  rootGroup.add(new THREE.LineSegments(
+    new THREE.BufferGeometry().setFromPoints(diagPts),
+    new THREE.LineBasicMaterial({ color: 0x55524C, transparent: true, opacity: 0.32 })
+  ));
+
+  // 3. Translucent massing blocks + crisp wireframe creases
+  const parts = buildMassing(spec);
+  for (const { g, hex, op } of parts) {
+    const mat = new THREE.MeshLambertMaterial({
+      color: hex, transparent: true, opacity: op, depthWrite: false, side: THREE.DoubleSide
+    });
+    const m = new THREE.Mesh(g, mat);
+    rootGroup.add(m);
+    const eGeo = new THREE.EdgesGeometry(g, 18);
+    const eMat = new THREE.LineBasicMaterial({ color: 0x1B1B1F, transparent: true, opacity: 0.78 });
+    rootGroup.add(new THREE.LineSegments(eGeo, eMat));
+  }
+
+  // 4. Doorway rectangle & Human-height marker at in-game scale by the door
+  const [dx, dy, dz] = spec.door;
+  // Dark doorway opening on the wall right behind the human figure
+  const doorGeo = new THREE.BoxGeometry(0.22, HUMAN_H, 0.03);
+  doorGeo.translate(dx, dy + HUMAN_H / 2, dz - 0.02);
+  rootGroup.add(new THREE.Mesh(doorGeo, new THREE.MeshBasicMaterial({ color: 0x1B1B1F, transparent: true, opacity: 0.85 })));
+
+  // Human marker (vermilion #C8372D lanky soldier silhouette at HUMAN_H = 0.42 world units)
+  const hx = dx + 0.24, hy = dy, hz = Math.min(H / 2 - 0.06, dz + 0.14);
+  const hGroup = new THREE.Group();
+  hGroup.position.set(hx, hy, hz);
+  const vMat = new THREE.MeshBasicMaterial({ color: 0xC8372D });
+  // Legs & torso
+  const bodyG = new THREE.CylinderGeometry(0.035, 0.065, HUMAN_H * 0.72, 8);
+  bodyG.translate(0, HUMAN_H * 0.36, 0);
+  hGroup.add(new THREE.Mesh(bodyG, vMat));
+  // Shoulders
+  const shldrG = new THREE.BoxGeometry(0.13, HUMAN_H * 0.16, 0.06);
+  shldrG.translate(0, HUMAN_H * 0.68, 0);
+  hGroup.add(new THREE.Mesh(shldrG, vMat));
+  // Head
+  const headG = new THREE.SphereGeometry(0.038, 8, 8);
+  headG.translate(0, HUMAN_H * 0.82, 0);
+  hGroup.add(new THREE.Mesh(headG, vMat));
+  // Jingasa conical hat (top reaches exactly HUMAN_H)
+  const hatG = new THREE.ConeGeometry(0.095, HUMAN_H * 0.14, 10);
+  hatG.translate(0, HUMAN_H * 0.93, 0);
+  hGroup.add(new THREE.Mesh(hatG, vMat));
+  rootGroup.add(hGroup);
+
+  // 5. Camera setup: exact game camera angle (45° azimuth, ISO_EL = asin(37/64) ≈ 35.32° elevation)
+  // A w × h footprint has horizontal span in camera u-space = (W + H) / sqrt(2).
+  // We want (W + H) / sqrt(2) to map to GUIDE_DIAMOND_W (1600 px) out of SIZE (2048 px):
+  const spanU = (W + H) / Math.SQRT2;
+  const pxPerU = GUIDE_DIAMOND_W / spanU;
+  const halfFrustum = (SIZE / 2) / pxPerU;
+
+  // Front corner (W/2, 0, H/2) has camera-space v_front = -(W + H) / (2 * sqrt(2)) * sin(ISO_EL).
+  // To place the front corner at pixel y = GUIDE_FRONT_Y (1900 px from top, i.e. 876 px below center y=1024):
+  const vFront = -((W + H) / (2 * Math.SQRT2)) * Math.sin(ISO_EL);
+  const targetVFront = -(GUIDE_FRONT_Y - SIZE / 2) / pxPerU;
+  const camCenterV = vFront - targetVFront;
+
+  camera.left = -halfFrustum;
+  camera.right = halfFrustum;
+  camera.top = halfFrustum + camCenterV;
+  camera.bottom = -halfFrustum + camCenterV;
+  camera.updateProjectionMatrix();
+
+  const D = 60;
+  camera.position.set(
+    Math.cos(ISO_EL) / Math.SQRT2 * D,
+    Math.sin(ISO_EL) * D,
+    Math.cos(ISO_EL) / Math.SQRT2 * D
+  );
+  camera.lookAt(0, 0, 0);
+  camera.updateMatrixWorld();
+
+  renderer.render(scene, camera);
+
+  // Project key vertices to 2D canvas pixels (2048x2048) for exact overlay & verification
+  const toPx = (wx, wy, wz) => {
+    const v = new THREE.Vector3(wx, wy, wz).project(camera);
+    return [(v.x * 0.5 + 0.5) * SIZE, (-v.y * 0.5 + 0.5) * SIZE];
+  };
+
+  const ptF = toPx(W / 2, 0, H / 2);
+  const ptL = toPx(-W / 2, 0, H / 2);
+  const ptR = toPx(W / 2, 0, -H / 2);
+  const ptB = toPx(-W / 2, 0, -H / 2);
+  const ptHumanBot = toPx(hx, hy, hz);
+  const ptHumanTop = toPx(hx, hy + HUMAN_H, hz);
+
+  // Compose onto the visible 2048x2048 2D canvas with crisp technical callouts
+  const ctx = glCanvas.getContext("2d");
+  ctx.clearRect(0, 0, SIZE, SIZE);
+  ctx.drawImage(offGL, 0, 0);
+
+  // Crisp 2D vector outline of the true w × h footprint diamond on y=0
+  ctx.save();
+  ctx.strokeStyle = "#1B1B1F";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(ptL[0], ptL[1]);
+  ctx.lineTo(ptF[0], ptF[1]);
+  ctx.lineTo(ptR[0], ptR[1]);
+  ctx.lineTo(ptB[0], ptB[1]);
+  ctx.closePath();
+  ctx.stroke();
+
+  // Vermilion front-corner registration cross + human height dimension callout
+  ctx.strokeStyle = "#C8372D";
+  ctx.fillStyle = "#C8372D";
+  ctx.lineWidth = 3;
+  // Front corner tick
+  ctx.beginPath();
+  ctx.arc(ptF[0], ptF[1], 7, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Dimension bar beside human marker
+  const bx = ptHumanBot[0] + 22;
+  ctx.beginPath();
+  ctx.moveTo(bx, ptHumanBot[1]);
+  ctx.lineTo(bx, ptHumanTop[1]);
+  ctx.moveTo(bx - 7, ptHumanBot[1]);
+  ctx.lineTo(bx + 7, ptHumanBot[1]);
+  ctx.moveTo(bx - 7, ptHumanTop[1]);
+  ctx.lineTo(bx + 7, ptHumanTop[1]);
+  ctx.stroke();
+
+  if (includeLegend) {
+    ctx.font = "bold 24px monospace";
+    ctx.fillStyle = "#C8372D";
+    const humanPx = Math.round(ptHumanBot[1] - ptHumanTop[1]);
+    ctx.fillText(`1人 (door/soldier = ${humanPx}px)`, bx + 12, (ptHumanBot[1] + ptHumanTop[1]) / 2 + 8);
+
+    // Corner labels
+    ctx.font = "bold 22px monospace";
+    ctx.fillStyle = "#1B1B1F";
+    ctx.fillText(`F (${Math.round(ptF[0])}, ${Math.round(ptF[1])})`, ptF[0] - 85, ptF[1] + 34);
+    ctx.fillText(`L (${Math.round(ptL[0])}, ${Math.round(ptL[1])})`, ptL[0] - 160, ptL[1] + 8);
+    ctx.fillText(`R (${Math.round(ptR[0])}, ${Math.round(ptR[1])})`, ptR[0] + 14, ptR[1] + 8);
+    ctx.fillText(`B (${Math.round(ptB[0])}, ${Math.round(ptB[1])})`, ptB[0] - 85, ptB[1] - 16);
+
+    // Top-left technical specification stamp
+    ctx.fillStyle = "rgba(27, 27, 31, 0.88)";
+    ctx.fillRect(36, 36, 940, 116);
+    ctx.strokeStyle = "#C8372D";
+    ctx.lineWidth = 3;
+    ctx.strokeRect(36, 36, 940, 116);
+    ctx.fillStyle = "#EDE4D3";
+    ctx.font = "bold 30px sans-serif";
+    ctx.fillText(`${spec.name} — ${W}×${H} tiles (b_${spec.bId}.webp)`, 58, 78);
+    ctx.font = "22px monospace";
+    ctx.fillStyle = "#D0C8B8";
+    ctx.fillText(`Cam: Ortho 45° az, 35.32° el (ratio 37/64 = 0.578) | Diamond: ${Math.round(ptR[0]-ptL[0])}×${Math.round(ptF[1]-ptB[1])}px`, 58, 112);
+    ctx.fillText(`Front Vertex F: (1024, 1900) | PivotX: 0.500 | Soldier Marker: ${humanPx}px`, 58, 138);
+  }
+  ctx.restore();
+
+  // Update Ghost underlay position if active
+  const ghost = document.getElementById("ghostImg");
+  ghost.src = `../assets/style/b_${spec.bId}.webp`;
+  ghost.onload = () => {
+    // Scale ghost so its diamond width matches GUIDE_DIAMOND_W * spec.fit and front corner sits at F
+    const dispW = (GUIDE_DIAMOND_W / SIZE) * 100 * spec.fit;
+    ghost.style.width = `${dispW}%`;
+    ghost.style.left = `${(ptF[0] / SIZE) * 100 - dispW * 0.5}%`;
+    ghost.style.top = `calc(${(ptF[1] / SIZE) * 100}% - ${ghost.clientHeight}px)`;
+  };
+
+  const metrics = {
+    id: spec.id, bId: spec.bId, w: W, h: H,
+    F: ptF, L: ptL, R: ptR, B: ptB,
+    diamondW: ptR[0] - ptL[0],
+    diamondH: ptF[1] - ptB[1],
+    ratio: (ptF[1] - ptB[1]) / (ptR[0] - ptL[0]),
+    humanPx: ptHumanBot[1] - ptHumanTop[1]
+  };
+  document.getElementById("hudInfo").textContent =
+    `${spec.id} (${W}×${H}) | Diamond: ${metrics.diamondW.toFixed(1)}×${metrics.diamondH.toFixed(1)}px (ratio ${metrics.ratio.toFixed(5)}, 35.32°) | Front F: (${ptF[0].toFixed(1)}, ${ptF[1].toFixed(1)}) | Human Marker: ${metrics.humanPx.toFixed(1)}px`;
+  return metrics;
+}
+
+// Populate UI
+const listEl = document.getElementById("bldgList");
+let curSpec = SPECS[0];
+
+function selectSpec(s) {
+  curSpec = s;
+  document.querySelectorAll(".bldg-btn").forEach(b => b.classList.toggle("active", b.dataset.id === s.id));
+  renderGuide(s, document.getElementById("chkLabels").checked);
+}
+
+for (const s of SPECS) {
+  const b = document.createElement("button");
+  b.className = "bldg-btn";
+  b.dataset.id = s.id;
+  b.innerHTML = `<span>${s.name}</span><span class="meta">${s.w}×${s.h}</span>`;
+  b.onclick = () => selectSpec(s);
+  listEl.appendChild(b);
+}
+
+document.querySelectorAll('input[name="bg"]').forEach(r => {
+  r.onchange = () => {
+    const wrap = document.getElementById("canvasWrap");
+    wrap.className = r.value;
+  };
+});
+
+document.getElementById("chkGhost").onchange = e => {
+  document.getElementById("ghostImg").style.display = e.target.checked ? "block" : "none";
+  renderGuide(curSpec, document.getElementById("chkLabels").checked);
+};
+
+document.getElementById("chkLabels").onchange = e => {
+  renderGuide(curSpec, e.target.checked);
+};
+
+function downloadCanvas(filename) {
+  return new Promise(resolve => {
+    glCanvas.toBlob(blob => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => { URL.revokeObjectURL(url); resolve(); }, 120);
+    }, "image/png");
+  });
+}
+
+document.getElementById("btnDownloadOne").onclick = async () => {
+  renderGuide(curSpec, document.getElementById("chkLabels").checked);
+  await downloadCanvas(`paintover_${curSpec.id}_2048.png`);
+};
+
+document.getElementById("btnDownloadAll").onclick = async () => {
+  const st = document.getElementById("statusTxt");
+  const inc = document.getElementById("chkLabels").checked;
+  for (let i = 0; i < SPECS.length; i++) {
+    const s = SPECS[i];
+    st.textContent = `Exporting ${i + 1}/${SPECS.length}: ${s.id}...`;
+    selectSpec(s);
+    await new Promise(r => setTimeout(r, 60));
+    await downloadCanvas(`paintover_${s.id}_2048.png`);
+  }
+  st.textContent = `Exported all ${SPECS.length} 2048px PNGs.`;
+};
+
+selectSpec(SPECS[0]);
+
+window.__paintover = {
+  SPECS,
+  renderGuide,
+  selectSpec,
+  exportDataURL(id, includeLegend = true) {
+    const s = SPECS.find(x => x.id === id) || SPECS[0];
+    const m = renderGuide(s, includeLegend);
+    return { metrics: m, dataUrl: glCanvas.toDataURL("image/png") };
+  }
+};
+</script>
+</body>
+</html>

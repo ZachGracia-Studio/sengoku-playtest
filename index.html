@@ -251,6 +251,30 @@ body.nlbadge .screen { padding-bottom: calc(var(--sab) + 70px); }
   color: #9f9; padding: 6px 8px; border-radius: 3px; pointer-events: none; display: none; white-space: pre; }
 body.dev #dev { display: block; }
 @media (prefers-reduced-motion: reduce) { .pulse, #banner.show { animation: none; } #banner.show { opacity: 1; } }
+
+body.board-c:not(.night) #top .stat {
+  background-color: rgba(239, 232, 216, 0.88);
+  padding: 4px 10px 8px;
+  border-radius: 3px;
+  box-shadow: 0 1px 0 rgba(27, 27, 31, 0.45);
+}
+body.board-c:not(.night) #pauseBtn {
+  background-color: rgba(239, 232, 216, 0.88);
+}
+body.board-c:not(.night) #bar:not(.panel) {
+  background: rgba(239, 232, 216, 0.78);
+  border-radius: 3px;
+  padding: 2px 6px;
+}
+body.board-c:not(.night) #hint {
+  background: rgba(239, 232, 216, 0.86);
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 3px;
+  border: 1px solid rgba(27, 27, 31, 0.35);
+  text-shadow: none;
+}
+body.board-c #bottom { text-align: center; }
 </style>
 </head>
 <body>
@@ -343,6 +367,33 @@ body.dev #dev { display: block; }
    read image dimensions.
    ========================================================================= */
 const TW = 64, TH = 37;   // iso tile in world px — true isometric (≈1.73:1) to match the building and tile art
+const TEST_PARAMS = new URLSearchParams(location.search);
+const TEST_ENTRIES = TEST_PARAMS.getAll("test");
+const findTestSub = prefix => {
+  for (const t of TEST_ENTRIES) if (t === prefix || t.startsWith(prefix + "=")) return t.split("=")[1] || "";
+  return TEST_PARAMS.get(prefix) || "";
+};
+const hasTestFlag = flag => TEST_ENTRIES.some(t => t === flag || t.startsWith(flag + "=")) || TEST_PARAMS.has(flag);
+const TEST_FLAG = hasTestFlag("board") ? "board" : (TEST_PARAMS.get("test") || "").split("=")[0];
+const TEST_SUB = hasTestFlag("board") ? (findTestSub("board") || "a") : ((TEST_PARAMS.get("test") || "").split("=")[1] || "");
+const SHOW_FOOTPRINT = hasTestFlag("footprint");
+const STYLE_V2 = /[?&]style=v2\b/.test(location.search);
+const SCALE_RAW = parseFloat(findTestSub("scale"));
+const UNIT_SCALE_MULT = hasTestFlag("scale") && Number.isFinite(SCALE_RAW) && SCALE_RAW > 0 ? SCALE_RAW : (STYLE_V2 ? 1.5 : 1.0);
+const TEST_CFG = {
+  footprint: { color: "#C8372D", lineWidth: 1.75 },
+  board:     { mode: hasTestFlag("board") ? (findTestSub("board") || "a") : "" },
+  scale:     { mult: UNIT_SCALE_MULT, unit: UNIT_SCALE_MULT, cavalry: UNIT_SCALE_MULT, yokai: UNIT_SCALE_MULT },
+  halo:      { mode: findTestSub("halo") || "c", width: 1.8, color: "#EDE4D3", shadowAlpha: 0.42, shadowScale: 1.15 },
+  clouds:    { mode: findTestSub("clouds") || "b", scallopR: 54, contourWidth: 1.6, contourAlpha: 0.72, dryStrokes: 38 },
+  night:     { wash: "#161E2B", washAlpha: 0.58, lanternColor: "#F1E6CF", lanternAlpha: 0.34, keepRadius: 185, bldgRadius: 92, yokaiLift: 0.55 }
+};
+const unitScaleOf = u => {
+  if (!u) return 1;
+  if (u.type === "cavalry") return TEST_CFG.scale.cavalry || 1;
+  if (u.team === "E") return TEST_CFG.scale.yokai || 1;
+  return TEST_CFG.scale.unit || 1;
+};
 
 // Render config: source, ground pivot (fraction of width; bottom edge = ground),
 // native facing, display size in world px.
@@ -485,6 +536,28 @@ for (const id of ISO_ART) ASSETS[id] = { src: `assets/${id}.webp`, pivotX: ISO_P
 // own width to the footprint (tiers may differ in size). Scaffolds and damaged states keep the earlier art for now.
 const MJB = /*MJB*/{"art":{"keep_t3":"keep3","house_t1":"house","house_t2":"house","house_t3":"house","farm_kura_t1":"kura","farm_kura_t2":"kura","farm_kura_t3":"kura","lumber_t1":"lumber","lumber_t2":"lumber","lumber_t3":"lumber","tower_t1":"tower","tower_t2":"tower","tower_t3":"tower","stable_t1":"stable","stable_t2":"stable","stable_t3":"stable","range_t1":"range","range_t2":"range","range_t3":"range","temple_t1":"temple","temple_t2":"temple","temple_t3":"temple","hideout_t1":"hideout","hideout_t2":"hideout","hideout_t3":"hideout","smith_t1":"smith","smith_t2":"smith","smith_t3":"smith","keep_t1":"keep1","keep_t2":"keep2","dojo_t1":"dojo","dojo_t2":"dojo","dojo_t3":"dojo"},"piv":{"keep3":0.499,"stable":0.424,"house":0.531,"smith":0.527,"hideout":0.47,"temple":0.541,"range":0.478,"tower":0.581,"lumber":0.349,"kura":0.444,"keep2":0.518,"keep1":0.556,"dojo":0.54},"fit":{"tower_t1":1.25,"house_t1":1.15}}/*END*/;
 if (STYLE_MJ) for (const [art, id] of Object.entries(MJB.art || {})) ASSETS[art] = { src: `assets/style/b_${id}.webp`, pivotX: MJB.piv[id], own: true };
+if (STYLE_V2) {
+  const hv = (location.search.match(/[?&]house=([12])\b/) || [])[1] || "1";
+  const kv = (location.search.match(/[?&]keep=([12])\b/) || [])[1] || "2";
+  for (const k of ["house_t1", "house_t2", "house_t3"]) ASSETS[k] = { src: `assets/style/v2/buildings/house_v${hv}.webp`, pivotX: 0.500, own: true };
+  ASSETS.keep_t1 = { src: `assets/style/v2/buildings/keep1_v${kv}.webp`, pivotX: 0.500, own: true };
+  ASSETS.keep_t2 = { src: "assets/style/v2/buildings/keep2.webp", pivotX: 0.500, own: true };
+  ASSETS.keep_t3 = { src: "assets/style/v2/buildings/keep3.webp", pivotX: 0.500, own: true };
+  for (const k of ["farm_kura_t1", "farm_kura_t2", "farm_kura_t3"]) ASSETS[k] = { src: "assets/style/v2/buildings/kura.webp", pivotX: 0.500, own: true };
+  for (const k of ["lumber_t1", "lumber_t2", "lumber_t3"]) ASSETS[k] = { src: "assets/style/v2/buildings/lumber.webp", pivotX: 0.500, own: true };
+  for (const k of ["smith_t1", "smith_t2", "smith_t3"]) ASSETS[k] = { src: "assets/style/v2/buildings/smith.webp", pivotX: 0.500, own: true };
+  for (const k of ["tower_t1", "tower_t2", "tower_t3"]) ASSETS[k] = { src: "assets/style/v2/buildings/tower.webp", pivotX: 0.500, own: true };
+  for (const k of ["temple_t1", "temple_t2", "temple_t3"]) ASSETS[k] = { src: "assets/style/v2/buildings/temple.webp", pivotX: 0.500, own: true };
+  for (const k of ["stable_t1", "stable_t2", "stable_t3"]) ASSETS[k] = { src: "assets/style/v2/buildings/stable.webp", pivotX: 0.500, own: true };
+  MJB.fit.house_t1 = 1.330;
+  MJB.fit.keep_t1 = 1.063;
+  MJB.fit.farm_kura_t1 = 1.341;
+  MJB.fit.lumber_t1 = 1.178;
+  MJB.fit.smith_t1 = 1.147;
+  MJB.fit.tower_t1 = 1.277;
+  MJB.fit.temple_t1 = 1.334;
+  MJB.fit.stable_t1 = 1.211;
+}
 for (const id of ["cliff_straight", "cliff_gap", "riv_s2", "riv_br2", "mtn_strip", "fx_slash_a", "fx_slash_b", "fx_slash_c", "fx_thrust", "fx_arrow",
   "fx_fire1", "fx_fire2", "fx_fire3", "fx_smoke", "fx_dust", "fx_spirit1", "fx_spirit2", "fx_spirit3", "fx_burst"]) ASSETS[id] = { src: `assets/${id}.webp` };
 
@@ -516,6 +589,21 @@ for (const [k, pv] of Object.entries({ vp_well: .561, vp_cart: .397, vp_barrels:
 ASSETS.ui_seal = ASSETS.ui_seal || { src: "assets/ui_seal.webp" };
 // palisade pieces (drawn per tile, oriented by neighbours) and the hero
 for (const id of ["pal_wall_a", "pal_wall_b", "pal_corner", "pal_gate", "pal_gate_open"]) ASSETS[id] = { src: `assets/${id}.webp` };
+const IS_BOARD_C = TEST_FLAG === "board" && /^(c0|c1)$/.test(TEST_SUB);
+const IS_BOARD_A1_OR_C = TEST_FLAG === "board" && /^(a1|c0|c1)$/.test(TEST_SUB);
+if (IS_BOARD_C) document.body.classList.add("board-c");
+if (TEST_FLAG === "board" && /^(a|b|c|a1|c0|c1)$/.test(TEST_SUB)) {
+  const bm = IS_BOARD_C ? "a1" : TEST_SUB, bp = id => `assets/style/v2/board/${bm}/${id}.webp`;
+  for (const id of ["pine", "pine2", "win_pine", "aut_pine", "sc_bamboo", "aut_bamboo", "sc_maple", "rocks", "sc_rocks",
+    "farm_paddy0", "farm_paddy1", "farm_paddy2", "farm_paddy3", "riv_s2", "riv_br2", "rd_x", "rd_y", "fog_band_a", "fog_band_b",
+    "gm0", "gm1", "gm2", "gm3", "gm4", "gm5", "ge0", "ge1", "ge2", "ge3", "ge4", "ge5", "gf0", "gf1", "gf2", "gf3", "gf4", "gf5"]) {
+    if (ASSETS[id]) ASSETS[id].src = bp(id);
+  }
+  ASSETS.pine.pivotX = .5; ASSETS.pine2.pivotX = .5; ASSETS.rocks.pivotX = .5;
+  ASSETS.sc_bamboo.pivotX = .5; ASSETS.sc_rocks.pivotX = .5;
+  if (bm === "a1") { ASSETS.rocks.dispW = 86; INK_PROPS.sc_rocks[2] = 1.28; if (ASSETS.sc_rocks) ASSETS.sc_rocks.fit = 1.28; }
+  for (const id of ["farm_paddy0", "farm_paddy1", "farm_paddy2", "farm_paddy3"]) ASSETS[id].pivotX = .5;
+}
 ASSETS.kage_bust = { src: "assets/kage_bust.webp" };
 
 // Unit stats per single soldier. radius = collision radius in tiles.
@@ -683,7 +771,7 @@ function newWorld(chapter, seed = 7) {
     for (let y = ty; y < ty + 2; y++) for (let x = tx; x < tx + 2; x++) S.occ[y][x] = p;
   }
   // set-pieces: deterministic spots well away from the keep, roads and spawn edges
-  if (chapter.setpieces) { let seed = chapter.setpieces * 31 + 7; const r = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  if (chapter.setpieces && !IS_BOARD_A1_OR_C) { let seed = chapter.setpieces * 31 + 7; const r = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
     const [kx, ky] = chapter.keepAt, N = chapter.map; let placed = 0;
     for (let tries = 0; tries < 400 && placed < chapter.setpieces; tries++) {
       const tx = 3 + Math.floor(r() * (N - 6)), ty = 3 + Math.floor(r() * (N - 6));
@@ -710,11 +798,257 @@ function newWorld(chapter, seed = 7) {
   }
   for (const [type, tx, ty, tier] of chapter.startBuildings || []) { const b = addBuilding(type, tx, ty, true); setTier(b, tier); }
   if (chapter.keepTier) setTier(keep(), chapter.keepTier);
+  const ktParam = (location.search.match(/[?&]keepTier=([012])\b/) || [])[1];
+  if (ktParam != null) setTier(keep(), +ktParam);
   if (!chapter.tutorial) spawnHero();
+  if (IS_BOARD_A1_OR_C) pruneA1Rocks();
+  if (IS_BOARD_C) setupBoardCEntities();
   return S;
 }
 
 const keep = () => S.buildings.find(b => b.type === "keep");
+function pruneA1Rocks() {
+  if (!S || !S.props) return;
+  const k = keep(), keptRocks = [];
+  S.props = S.props.filter(p => {
+    if (p.art !== "rocks" && p.art !== "sc_rocks") return true;
+    const px = p.tx + (p.w || 1) / 2, py = p.ty + (p.h || 1) / 2;
+    for (const b of S.buildings) {
+      if (p.tx >= b.tx - 2 && p.tx < b.tx + b.w + 2 && p.ty >= b.ty - 2 && p.ty < b.ty + b.h + 2) {
+        if (S.occ[p.ty] && S.occ[p.ty][p.tx] === p) S.occ[p.ty][p.tx] = null;
+        return false;
+      }
+    }
+    if (k && hypot(px - (k.tx + 1.5), py - (k.ty + 3.5)) < 4.5) {
+      if (S.occ[p.ty] && S.occ[p.ty][p.tx] === p) S.occ[p.ty][p.tx] = null;
+      return false;
+    }
+    for (const u of S.units) {
+      if (hypot(px - u.x, py - u.y) < 2.8) {
+        if (S.occ[p.ty] && S.occ[p.ty][p.tx] === p) S.occ[p.ty][p.tx] = null;
+        return false;
+      }
+    }
+    if (CH && CH.river && Math.abs(px - CH.river.x) <= 2.5) {
+      if (S.occ[p.ty] && S.occ[p.ty][p.tx] === p) S.occ[p.ty][p.tx] = null;
+      return false;
+    }
+    if (keptRocks.some(([rx, ry]) => hypot(px - rx, py - ry) < 6.5)) {
+      if (S.occ[p.ty] && S.occ[p.ty][p.tx] === p) S.occ[p.ty][p.tx] = null;
+      return false;
+    }
+    keptRocks.push([px, py]);
+    return true;
+  });
+}
+function getBoardCRoadSegments() {
+  if (!S || !CH) return [];
+  const k = keep();
+  const kx = k ? k.tx : 10, ky = k ? k.ty : 10;
+  let chains = [];
+  if (CH.tutorial) {
+    chains = [
+      [[kx + 1.5, 0.4], [kx + 1.5, ky + 0.5]],
+      [[kx + 1.5, ky + 3.0], [kx + 1.5, MAP - 0.4]],
+      [[kx + 1.5, ky + 3.1], [5.5, 9.2], [2.4, 9.2], [0.4, 9.2]],
+      [[kx + 1.5, ky + 3.1], [11.5, 10.2], [MAP - 0.4, 10.2]]
+    ];
+  } else if (CH.sandbox) {
+    chains = [
+      [[kx + 1.5, 0.4], [kx + 1.5, ky + 0.4]],
+      [[kx + 1.5, ky + 3.0], [kx + 1.5, 11.2], [9.5, 12.5]],
+      [[kx + 1.2, ky + 3.0], [4.5, 9.5], [0.4, 9.5]],
+      [[kx + 2.8, ky + 2.2], [11.5, 8.2], [MAP - 0.4, 8.2]]
+    ];
+  } else {
+    chains = [
+      [[kx + 1.5, 0.3], [kx + 1.5, ky + 0.6]],
+      [[kx + 1.5, ky + 3.2], [kx + 1.5, MAP - 0.3]],
+      [[kx + 3.6, ky + 2.0], [kx + 5.2, ky + 0.5], [MAP - 0.3, ky + 0.5]],
+      [[kx - 1.2, ky + 2.6], [7.0, 12.5], [0.3, 12.5]]
+    ];
+  }
+  const segs = [];
+  for (const ch of chains) {
+    for (let i = 0; i < ch.length - 1; i++) segs.push([ch[i], ch[i + 1]]);
+  }
+  return segs;
+}
+
+function isNearBuildingWallOrRoad(px, py) {
+  if (!S) return false;
+  // Minimum 2-tile clearance from every building and wall
+  for (const b of S.buildings) {
+    const dx = Math.max(b.tx - px, 0, px - (b.tx + b.w));
+    const dy = Math.max(b.ty - py, 0, py - (b.ty + b.h));
+    if (Math.hypot(dx, dy) < 2.0) return true;
+  }
+  // Minimum 2-tile clearance from landmarks
+  for (const p of S.props) {
+    if (LANDMARKS[p.art]) {
+      const dx = Math.max(p.tx - px, 0, px - (p.tx + (p.w || 2)));
+      const dy = Math.max(p.ty - py, 0, py - (p.ty + (p.h || 2)));
+      if (Math.hypot(dx, dy) < 2.0) return true;
+    }
+  }
+  // Minimum 2-tile clearance from all roads
+  for (const [[x0, y0], [x1, y1]] of getBoardCRoadSegments()) {
+    const dx = x1 - x0, dy = y1 - y0, l2 = dx * dx + dy * dy;
+    const u = clamp(((px - x0) * dx + (py - y0) * dy) / (l2 || 1), 0, 1);
+    if (Math.hypot(px - (x0 + u * dx), py - (y0 + u * dy)) < 2.0) return true;
+  }
+  // Keep clear of malachite field blocks
+  if (CH.tutorial) {
+    if ((px >= 1.5 && px <= 5.6 && py >= 5.5 && py <= 9.4) || (px >= 10.7 && px <= 14.8 && py >= 4.5 && py <= 8.4)) return true;
+  } else if (CH.sandbox) {
+    if (px >= 5.5 && px <= 9.6 && py >= 1.5 && py <= 5.4) return true;
+  } else {
+    if ((px >= 2.5 && px <= 7.8 && py >= 9.0 && py <= 15.0) ||
+        (px >= 12.0 && px <= 17.2 && py >= 4.8 && py <= 10.0) ||
+        (px >= 7.2 && px <= 12.0 && py >= 15.0 && py <= 20.0)) return true;
+  }
+  return false;
+}
+
+function pruneBoardCTrees() {
+  if (!S || !S.props) return;
+  S.props = S.props.filter(p => {
+    if (!TREES.has(p.art)) return true;
+    const px = p.tx + 0.5 + (p.ox || 0), py = p.ty + 0.5 + (p.oy || 0);
+    if (isNearBuildingWallOrRoad(px, py)) {
+      if (S.occ[p.ty] && S.occ[p.ty][p.tx] === p) S.occ[p.ty][p.tx] = null;
+      return false;
+    }
+    return true;
+  });
+}
+
+function setupBoardCEntities() {
+  if (!S) return;
+  const k = keep();
+  if (!k) return;
+
+  const addGroveTrees = (groveList) => {
+    for (let i = 0; i < groveList.length; i++) {
+      const [art, gx, gy, noBlock, ox, oy] = groveList[i];
+      if (gx < 0 || gy < 0 || gx >= MAP || gy >= MAP) continue;
+      if (!noBlock && S.occ[gy] && S.occ[gy][gx]) continue;
+      const jx = ox !== undefined ? ox : (((i * 37 + gx * 13 + gy * 7) % 11) - 5) * 0.045;
+      const jy = oy !== undefined ? oy : (((i * 23 + gx * 19 + gy * 11) % 11) - 5) * 0.045;
+      const px = gx + 0.5 + jx, py = gy + 0.5 + jy;
+      if (isNearBuildingWallOrRoad(px, py)) continue;
+      const p = { id: nextId++, art, tx: gx, ty: gy, ox: jx, oy: jy, w: 1, h: 1, prop: true, noBlock: !!noBlock };
+      S.props.push(p);
+      if (!noBlock && S.occ[gy]) S.occ[gy][gx] = p;
+    }
+  };
+
+  if (CH.tutorial) {
+    // First Light (16x16, keep at [7,7]): add two village houses beside the keep along the brushed road
+    for (const [hx, hy] of [[5, 8], [11, 9]]) {
+      if (hx >= 1 && hy >= 1 && hx < MAP - 1 && hy < MAP - 1 && !S.occ[hy][hx]) {
+        addBuilding("house", hx, hy, true);
+      }
+    }
+    // Remove default chapter trees so we place clean, thinned groves (~60% fewer trees: edge groves of 3-4, 2 inner groves of 3)
+    S.props = S.props.filter(p => {
+      if (TREES.has(p.art)) {
+        if (S.occ[p.ty] && S.occ[p.ty][p.tx] === p) S.occ[p.ty][p.tx] = null;
+        return false;
+      }
+      return true;
+    });
+    addGroveTrees([
+      // W Edge Grove (4 trees — along outer-left edge, clear of top FIRST LIGHT bar and >= 2 tiles from fields/shrine)
+      ["pine", 0, 7, true, -0.35, -0.15], ["sc_bamboo", 0, 7, true, -0.32, 0.30], ["pine2", 0, 8, true, -0.35, 0.15], ["sc_bamboo", 0, 9, true, -0.30, 0.25],
+      // NE Edge Grove (4 trees — upper-right flank)
+      ["pine2", 13, 1, true, -0.1, -0.05], ["pine", 14, 1, true, 0.1, 0.0], ["sc_bamboo", 13, 2, true, -0.05, 0.1], ["sc_bamboo", 14, 2, true, 0.1, 0.08],
+      // SW Edge Grove (3 trees — lower-left flank)
+      ["pine", 1, 13, true, -0.1, 0.0], ["sc_bamboo", 2, 13, true, 0.1, 0.05], ["pine2", 1, 14, true, 0.0, 0.1],
+      // SE Edge Grove (3 trees — lower-right flank, clear of south road)
+      ["sc_bamboo", 14, 12, true, -0.08, 0.0], ["pine", 15, 12, true, 0.05, 0.05], ["pine2", 14, 13, true, 0.05, 0.1],
+      // Inner Grove 1 (3 trees — NE clearing, >= 2 tiles from road, fields, and keep)
+      ["pine", 5, 2, true, -0.1, -0.05], ["sc_bamboo", 5, 2, true, 0.35, -0.15], ["pine2", 5, 3, true, -0.05, 0.08],
+      // Inner Grove 2 (3 trees — SW clearing, >= 2 tiles from road, fields, and house)
+      ["pine2", 4, 12, true, -0.08, -0.05], ["sc_bamboo", 5, 12, true, 0.08, 0.0], ["pine", 4, 13, true, 0.0, 0.08]
+    ]);
+    pruneBoardCTrees();
+    return;
+  }
+
+  if (CH.sandbox) {
+    // Test ground (14x14, keep at [6,6]): add one village house near the keep courtyard so keep + house frame together at 375x812
+    if (!S.occ[9][5]) addBuilding("house", 5, 9, true);
+    // Under ?style=v2, showcase Phase E Batch 1 & 2a buildings (kura at [2,2], lumber at [2,5], smith at [10,3], tower at [5,11], stable at [5,2], temple at [10,6])
+    if (STYLE_V2) {
+      const g2 = S.buildings.find(b => b.type === "granary" && b.tx === 2 && b.ty === 5);
+      if (g2) { removeBuilding(g2); addBuilding("lumber", 2, 5, true); }
+      const g3 = S.buildings.find(b => b.type === "granary" && b.tx === 10 && b.ty === 3);
+      if (g3) { removeBuilding(g3); addBuilding("smith", 10, 3, true); }
+      if (!S.occ[6][10] && !S.occ[6][11] && !S.occ[7][10] && !S.occ[7][11]) addBuilding("temple", 10, 6, true);
+    }
+    // Remove default chapter trees that sit within 2 tiles of kura/smith/hideout
+    S.props = S.props.filter(p => {
+      if (TREES.has(p.art)) {
+        if (S.occ[p.ty] && S.occ[p.ty][p.tx] === p) S.occ[p.ty][p.tx] = null;
+        return false;
+      }
+      return true;
+    });
+    // Thinned edge groves of 3-4 trees on the open flanks strictly >= 2 tiles outside all buildings, walls, and roads
+    addGroveTrees([
+      // NW Edge Flank Grove (3 trees)
+      ["pine", 0, 0, true, -0.35, -0.25], ["sc_bamboo", 0, 0, true, 0.15, -0.30], ["pine2", 0, 1, true, -0.35, -0.15],
+      // NE Edge Flank Grove (4 trees)
+      ["pine2", 9, 0, true, 0.10, -0.32], ["sc_bamboo", 9, 0, true, 0.44, -0.18], ["pine", 10, 0, true, -0.02, -0.35], ["sc_bamboo", 10, 0, true, 0.38, -0.24],
+      // SW Edge Flank Grove (3 trees)
+      ["pine", 3, 13, true, -0.38, 0.34], ["sc_bamboo", 3, 13, true, 0.06, 0.38], ["pine2", 3, 13, true, 0.44, 0.28],
+      // SE Edge Flank Grove (3 trees)
+      ["sc_bamboo", 13, 11, true, 0.38, -0.15], ["pine", 13, 11, true, 0.42, 0.30], ["pine2", 13, 12, true, 0.35, 0.25]
+    ]);
+    pruneBoardCTrees();
+    return;
+  }
+
+  // Ensure village houses exist around the keep so roads connect keep, houses, fields, and map edge
+  if (S.buildings.filter(b => b.type === "house").length === 0) {
+    const hSpots = [[k.tx - 2, k.ty + 1], [k.tx - 2, k.ty + 3], [k.tx + 4, k.ty + 2]];
+    for (const [hx, hy] of hSpots) {
+      if (hx >= 1 && hy >= 1 && hx < MAP - 1 && hy < MAP - 1) {
+        if (S.occ[hy][hx] && S.occ[hy][hx].prop) {
+          S.props = S.props.filter(p => p !== S.occ[hy][hx]);
+          S.occ[hy][hx] = null;
+        }
+        if (!S.occ[hy][hx]) addBuilding("house", hx, hy, true);
+      }
+    }
+  }
+  // Thin scattered trees by ~60% and remove any tree within 2 tiles of buildings, walls, roads, or fields
+  let treeIdx = 0;
+  S.props = S.props.filter(p => {
+    if (LANDMARKS[p.art]) return true;
+    if (TREES.has(p.art)) {
+      const px = p.tx + 0.5 + (p.ox || 0), py = p.ty + 0.5 + (p.oy || 0);
+      if (isNearBuildingWallOrRoad(px, py) || (treeIdx++ % 3 !== 0)) {
+        if (S.occ[p.ty] && S.occ[p.ty][p.tx] === p) S.occ[p.ty][p.tx] = null;
+        return false;
+      }
+    }
+    return true;
+  });
+  // Edge groves of 3-4 trees + 2 inner groves maximum
+  addGroveTrees([
+    // NW Edge Grove (4 trees)
+    ["pine", 3, 1, true], ["pine2", 4, 1, true], ["sc_bamboo", 5, 1, true], ["pine", 4, 2, true],
+    // SE Edge Grove (4 trees)
+    ["sc_bamboo", 20, 14, true], ["pine", 21, 14, true], ["pine2", 20, 15, true], ["sc_bamboo", 21, 15, true],
+    // Inner Grove 1 (3 trees)
+    ["sc_bamboo", 16, 13, true], ["pine", 17, 13, true], ["pine2", 17, 12, true],
+    // Inner Grove 2 (3 trees)
+    ["pine", 2, 7, true], ["sc_bamboo", 1, 8, true], ["pine2", 2, 8, true]
+  ]);
+  pruneBoardCTrees();
+}
 // deterministic scenery for big maps: clusters of pines and rocks toward the edges
 function scatterProps(ch) {
   if (!ch.scatter) return [];
@@ -773,6 +1107,8 @@ function addBuilding(type, tx, ty, complete = false) {
     upg: null, born: S.t, hitT: -9, cd: 0 };
   S.buildings.push(b);
   for (let y = ty; y < ty + d.h; y++) for (let x = tx; x < tx + d.w; x++) S.occ[y][x] = b;
+  if (IS_BOARD_A1_OR_C && typeof pruneA1Rocks === "function") pruneA1Rocks();
+  if (IS_BOARD_C && typeof pruneBoardCTrees === "function") pruneBoardCTrees();
   return b;
 }
 
@@ -1819,7 +2155,1005 @@ function tinted(im, color, alpha = 1) {
   const g = c.getContext("2d"); g.drawImage(im, 0, 0); g.globalCompositeOperation = "source-atop";
   g.globalAlpha = alpha; g.fillStyle = color; g.fillRect(0, 0, c.width, c.height); return c;
 }
+const INK_RIM_IMG = {};
+function getInkRimImg(id) {
+  if (INK_RIM_IMG[id]) return INK_RIM_IMG[id];
+  if (!IMG[id] || !IMG[id].width) return null;
+  INK_RIM_IMG[id] = tinted(IMG[id], "#1B1B1F", 1);
+  return INK_RIM_IMG[id];
+}
+function cleanUnitPaperForGold(im, id) {
+  if (!im || !im.width || im.width <= 4) return im;
+  const W = im.width, H = im.height;
+  const c = document.createElement("canvas");
+  c.width = W; c.height = H;
+  const g = c.getContext("2d");
+  g.drawImage(im, 0, 0);
+  const imgData = g.getImageData(0, 0, W, H);
+  const d = imgData.data, N = W * H;
+  const extPaper = new Uint8Array(N);
+  const dist = new Uint16Array(N);
+  dist.fill(999);
+  const q = new Int32Array(N);
+  let qh = 0, qt = 0;
+  const isPalePaper = (idx) => {
+    const i = idx * 4, a = d[i + 3];
+    if (a <= 18) return true;
+    const r = d[i], gr = d[i + 1], b = d[i + 2];
+    if (r - gr > 40 && r > 110) return false;
+    const lum = 0.299 * r + 0.587 * gr + 0.114 * b;
+    const sat = Math.max(r, gr, b) - Math.min(r, gr, b);
+    return (lum > 185 && sat < 38) || (a < 215 && lum > 150 && sat < 42);
+  };
+  for (let idx = 0; idx < N; idx++) {
+    const x = idx % W, y = (idx / W) | 0;
+    const onBorder = x === 0 || y === 0 || x === W - 1 || y === H - 1;
+    if (d[idx * 4 + 3] <= 18 || (onBorder && isPalePaper(idx))) {
+      dist[idx] = 0;
+      q[qt++] = idx;
+    }
+  }
+  while (qh < qt) {
+    const curr = q[qh++], cd = dist[curr];
+    if (cd >= 6) continue;
+    const cx = curr % W, cy = (curr / W) | 0;
+    if (cx > 0 && dist[curr - 1] > cd + 1) { dist[curr - 1] = cd + 1; q[qt++] = curr - 1; }
+    if (cx < W - 1 && dist[curr + 1] > cd + 1) { dist[curr + 1] = cd + 1; q[qt++] = curr + 1; }
+    if (cy > 0 && dist[curr - W] > cd + 1) { dist[curr - W] = cd + 1; q[qt++] = curr - W; }
+    if (cy < H - 1 && dist[curr + W] > cd + 1) { dist[curr + W] = cd + 1; q[qt++] = curr + W; }
+  }
+  qh = 0; qt = 0;
+  for (let idx = 0; idx < N; idx++) {
+    if (dist[idx] === 0) { extPaper[idx] = 1; q[qt++] = idx; }
+  }
+  while (qh < qt) {
+    const curr = q[qh++], cx = curr % W, cy = (curr / W) | 0;
+    const maxD = cy > H * 0.78 ? 12 : 4;
+    if (dist[curr] >= maxD) continue;
+    for (const nb of [cx > 0 ? curr - 1 : -1, cx < W - 1 ? curr + 1 : -1, cy > 0 ? curr - W : -1, cy < H - 1 ? curr + W : -1]) {
+      if (nb >= 0 && !extPaper[nb] && isPalePaper(nb)) { extPaper[nb] = 1; q[qt++] = nb; }
+    }
+  }
+  const hasStalkPocket = /^(frm_cut|frm_plant|frm_bend|frm_hang|frm_carry|kk_gather)/.test(id);
+  for (let idx = 0; idx < N; idx++) {
+    const i = idx * 4;
+    if (extPaper[idx]) { d[i + 3] = 0; continue; }
+    const cx = idx % W, cy = (curr => (curr / W) | 0)(idx);
+    const r = d[i], gr = d[i + 1], b = d[i + 2];
+    const lum = 0.299 * r + 0.587 * gr + 0.114 * b;
+    const sat = Math.max(r, gr, b) - Math.min(r, gr, b);
+    if (hasStalkPocket && cx > W * 0.50 && cy > H * 0.34 && lum > 186 && sat < 36) {
+      d[i + 3] = 0; continue;
+    }
+    const onEdge = (cx > 0 && extPaper[idx - 1]) || (cx < W - 1 && extPaper[idx + 1]) || (cy > 0 && extPaper[idx - W]) || (cy < H - 1 && extPaper[idx + W]);
+    if ((onEdge || d[i + 3] < 230) && !(r - gr > 40 && r > 110)) {
+      if (onEdge && lum > 95) {
+        d[i] = 27; d[i + 1] = 27; d[i + 2] = 31;
+      } else if (d[i + 3] < 225 && lum > 130) {
+        d[i] = 27; d[i + 1] = 27; d[i + 2] = 31;
+        d[i + 3] = Math.round(d[i + 3] * Math.max(0.2, (240 - lum) / 140));
+      }
+    }
+  }
+  g.putImageData(imgData, 0, 0);
+  return c;
+}
+function cleanPropOrLegacyBldgForGold(im, id) {
+  if (!im || !im.width || im.width <= 4) return im;
+  const W = im.width, H = im.height;
+  const c = document.createElement("canvas");
+  c.width = W; c.height = H;
+  const g = c.getContext("2d");
+  g.drawImage(im, 0, 0);
+  const imgData = g.getImageData(0, 0, W, H);
+  const d = imgData.data, N = W * H;
+
+  const isTreeOrBamboo = /^(pine|pine2|win_pine|aut_pine|sc_bamboo|aut_bamboo|sc_maple|aut_maple|win_maple|spr_cherry|fxw_tree)/.test(id);
+  const isHideout = /^hideout_/.test(id);
+  const isLegacyBldg = /^(range_|hideout_|dojo_|stable_|temple_|gra_scaffold|sf_|dmg_|house_sf|house_dmg|keep_dmg|tower_dmg|smith_sf|tower_sf|lumber_sf)/.test(id);
+
+  // 1. Distance from transparent exterior and flood-fill of exterior paper fringes / halos / background washes
+  const extPaper = new Uint8Array(N);
+  const dist = new Uint16Array(N);
+  dist.fill(999);
+  const q = new Int32Array(N);
+  let qh = 0, qt = 0;
+
+  const isExtCandidate = (idx) => {
+    const i = idx * 4, a = d[i + 3];
+    if (a <= 20) return true;
+    const r = d[i], gr = d[i + 1], b = d[i + 2];
+    if (r - gr > 40 && r > 110) return false;
+    const lum = 0.299 * r + 0.587 * gr + 0.114 * b;
+    const sat = Math.max(r, gr, b) - Math.min(r, gr, b);
+    if (isTreeOrBamboo) {
+      // Strip the pale paper wash painted behind bamboo leaves & pine needles
+      return lum > 158 && sat < 48;
+    }
+    if (isHideout) {
+      // On b_hideout, remove ONLY the outside paper fringe around the contour
+      return (lum > 175 && sat < 40) || (a < 215 && lum > 135 && sat < 44);
+    }
+    if (isLegacyBldg) {
+      // Strip exterior pale fringes plus the flat mid-tan background silhouettes/splatters on b_range and b_dojo
+      const x = idx % W, y = (idx / W) | 0;
+      const inOuterSkyOrRim = (y < H * 0.52 && (x < W * 0.25 || x > W * 0.58)) || y > H * 0.72;
+      if (inOuterSkyOrRim && lum > 110 && lum < 200 && sat < 55) return true;
+      return (lum > 150 && sat < 45) || (a < 220 && lum > 125 && sat < 48);
+    }
+    // Rocks, vp_*, bale, farm_*, pal_*: strip exterior cutout paper fringe
+    return (lum > 155 && sat < 44) || (a < 220 && lum > 130 && sat < 46);
+  };
+
+  for (let idx = 0; idx < N; idx++) {
+    const x = idx % W, y = (idx / W) | 0;
+    const onBorder = x === 0 || y === 0 || x === W - 1 || y === H - 1;
+    if (d[idx * 4 + 3] <= 20 || (onBorder && isExtCandidate(idx))) {
+      dist[idx] = 0;
+      q[qt++] = idx;
+    }
+  }
+  const maxDist = isTreeOrBamboo ? 48 : isHideout ? 4 : isLegacyBldg ? 52 : 5;
+  while (qh < qt) {
+    const curr = q[qh++], cd = dist[curr];
+    if (cd >= maxDist) continue;
+    const cx = curr % W, cy = (curr / W) | 0;
+    if (cx > 0 && dist[curr - 1] > cd + 1) { dist[curr - 1] = cd + 1; q[qt++] = curr - 1; }
+    if (cx < W - 1 && dist[curr + 1] > cd + 1) { dist[curr + 1] = cd + 1; q[qt++] = curr + 1; }
+    if (cy > 0 && dist[curr - W] > cd + 1) { dist[curr - W] = cd + 1; q[qt++] = curr - W; }
+    if (cy < H - 1 && dist[curr + W] > cd + 1) { dist[curr + W] = cd + 1; q[qt++] = curr + W; }
+  }
+  qh = 0; qt = 0;
+  for (let idx = 0; idx < N; idx++) {
+    if (dist[idx] === 0) { extPaper[idx] = 1; q[qt++] = idx; }
+  }
+  while (qh < qt) {
+    const curr = q[qh++], cx = curr % W, cy = (curr / W) | 0;
+    const lim = isTreeOrBamboo ? 46 : isHideout ? 3 : isLegacyBldg ? (cy < H * 0.52 || cy > H * 0.72 ? 48 : 5) : 4;
+    if (dist[curr] >= lim) continue;
+    for (const nb of [cx > 0 ? curr - 1 : -1, cx < W - 1 ? curr + 1 : -1, cy > 0 ? curr - W : -1, cy < H - 1 ? curr + W : -1]) {
+      if (nb >= 0 && !extPaper[nb] && isExtCandidate(nb)) { extPaper[nb] = 1; q[qt++] = nb; }
+    }
+  }
+
+  // Target muted gold-ochre range under c1 (#8F7C55 = 143,124,85 to #A08A5E = 160,138,94, 1-2 steps darker than ground)
+  // Under c0 (ink-only), map to equivalent muted warm grey (#6E685F to #7E786E)
+  const isC1 = TEST_SUB === "c1";
+  const midR = isC1 ? 143 : 110, midG = isC1 ? 124 : 104, midB = isC1 ? 85 : 95;
+  const hiR  = isC1 ? 159 : 126, hiG  = isC1 ? 137 : 120, hiB  = isC1 ? 93 : 110;
+
+  for (let idx = 0; idx < N; idx++) {
+    const i = idx * 4;
+    if (extPaper[idx]) { d[i + 3] = 0; continue; }
+    const a = d[i + 3];
+    if (a === 0) continue;
+    const cx = idx % W, cy = (idx / W) | 0;
+    const r = d[i], gr = d[i + 1], b = d[i + 2];
+    // Preserve true vermilion seals/accents if any
+    if (r - gr > 44 && r > 115) continue;
+    const lum = 0.299 * r + 0.587 * gr + 0.114 * b;
+    const sat = Math.max(r, gr, b) - Math.min(r, gr, b);
+
+    // Strip any enclosed bright paper pockets trapped between bamboo leaves/stalks
+    if ((id === "sc_bamboo" || id === "aut_bamboo") && lum > 178 && sat < 45) {
+      d[i + 3] = 0; continue;
+    }
+
+    const onEdge = (cx > 0 && extPaper[idx - 1]) || (cx < W - 1 && extPaper[idx + 1]) || (cy > 0 && extPaper[idx - W]) || (cy < H - 1 && extPaper[idx + W]);
+    if (onEdge && lum > 95) {
+      d[i] = 27; d[i + 1] = 27; d[i + 2] = 31;
+      if (lum > 155) d[i + 3] = Math.round(a * 0.55);
+      continue;
+    }
+
+    // On b_hideout, strip the solid black V-shaped wedge in the lower yard and restore the building's plaster/lit planes to gofun white (#EFE8D8)
+    if (isHideout) {
+      // Building body sits above bldgBotY(cx); everything below it in b_hideout.webp is the solid black V-shaped yard wedge
+      const fx = cx / W, fy = cy / H;
+      const bldgBotF = fx <= 0.21
+        ? (0.545 + ((fx - 0.03) / 0.18) * 0.088)
+        : fx <= 0.69
+          ? (0.633 - ((fx - 0.21) / 0.48) * 0.085)
+          : 0.44;
+      if (fy > bldgBotF || (fx < 0.05 && fy > 0.52) || (fx > 0.69 && fy > 0.44)) {
+        d[i + 3] = 0;
+        continue;
+      }
+    }
+
+    // On b_hideout (and the upper building walls of b_dojo), restore plaster and lit planes to gofun white (#EFE8D8 = 239, 232, 216)
+    if (isHideout || (/^dojo_/.test(id) && cy <= H * 0.47)) {
+      if (lum <= 32) {
+        d[i] = 27; d[i + 1] = 27; d[i + 2] = 31;
+      } else if (lum >= 165) {
+        const t = Math.min(1, (lum - 165) / 60);
+        d[i]     = Math.round(215 + t * (239 - 215));
+        d[i + 1] = Math.round(208 + t * (232 - 208));
+        d[i + 2] = Math.round(192 + t * (216 - 192));
+      } else {
+        const t = (lum - 32) / (165 - 32);
+        d[i]     = Math.round(27 + t * (205 - 27));
+        d[i + 1] = Math.round(27 + t * (198 - 27));
+        d[i + 2] = Math.round(31 + t * (184 - 31));
+      }
+      continue;
+    }
+
+    // Remap all light & paper pixels into the ink -> #8F7C55 -> #A08A5E ramp so nothing ever reads white
+    if (lum <= 28) {
+      d[i] = 27; d[i + 1] = 27; d[i + 2] = 31;
+    } else if (lum <= 150) {
+      const t = (lum - 28) / (150 - 28);
+      d[i]     = Math.round(27 + t * (midR - 27));
+      d[i]     = Math.round(27 + t * (midR - 27));
+      d[i + 1] = Math.round(27 + t * (midG - 27));
+      d[i + 2] = Math.round(31 + t * (midB - 31));
+    } else {
+      const t = Math.min(1, (lum - 150) / (245 - 150));
+      d[i]     = Math.round(midR + t * (hiR - midR));
+      d[i + 1] = Math.round(midG + t * (hiG - midG));
+      d[i + 2] = Math.round(midB + t * (hiB - midB));
+    }
+  }
+
+  g.putImageData(imgData, 0, 0);
+
+  // For b_hideout: draw a soft feathered ink contact shadow (30-40% ink) + subtle earthen base and thin brushed yard line in place of the black V-wedge
+  if (isHideout) {
+    g.save();
+    g.globalCompositeOperation = "destination-over";
+
+    // 1. Soft earthen yard base across the 2x2 diamond
+    const Lx = W * 0.025, Ly = H * 0.595;
+    const Fx = W * 0.470, Fy = H * 0.978;
+    const Rx = W * 0.965, Ry = H * 0.575;
+    const Bx = W * 0.510, By = H * 0.260;
+
+    const yardGrad = g.createRadialGradient(W * 0.42, H * 0.60, W * 0.05, W * 0.47, H * 0.66, W * 0.46);
+    yardGrad.addColorStop(0, isC1 ? "rgba(128, 104, 64, 0.42)" : "rgba(110, 102, 90, 0.32)");
+    yardGrad.addColorStop(0.65, isC1 ? "rgba(136, 112, 70, 0.26)" : "rgba(118, 110, 98, 0.18)");
+    yardGrad.addColorStop(1, "rgba(136, 112, 70, 0.0)");
+    g.fillStyle = yardGrad;
+    g.beginPath();
+    g.moveTo(Lx, Ly); g.lineTo(Fx, Fy); g.lineTo(Rx, Ry); g.lineTo(Bx, By);
+    g.closePath();
+    g.fill();
+
+    // 2. Feathered 35% sumi-e ink contact shadow directly under the hideout building walls and porch
+    const shGrad = g.createRadialGradient(W * 0.36, H * 0.54, W * 0.04, W * 0.39, H * 0.57, W * 0.36);
+    shGrad.addColorStop(0, "rgba(27, 27, 31, 0.40)");
+    shGrad.addColorStop(0.55, "rgba(27, 27, 31, 0.30)");
+    shGrad.addColorStop(0.85, "rgba(27, 27, 31, 0.14)");
+    shGrad.addColorStop(1, "rgba(27, 27, 31, 0.0)");
+    g.fillStyle = shGrad;
+    g.beginPath();
+    g.moveTo(W * 0.03, H * 0.55);
+    g.lineTo(W * 0.22, H * 0.68);
+    g.lineTo(W * 0.74, H * 0.58);
+    g.lineTo(W * 0.52, H * 0.42);
+    g.closePath();
+    g.fill();
+
+    // 3. Thin dry-brushed ink boundary line along the front yard edges (no solid wedge)
+    g.strokeStyle = "rgba(27, 27, 31, 0.34)";
+    g.lineWidth = Math.max(1.4, W * 0.0038);
+    g.lineCap = "round";
+    g.beginPath();
+    // Broken dry-brush segments along L -> F and F -> R
+    for (const [x0, y0, x1, y1] of [
+      [Lx + (Fx - Lx) * 0.05, Ly + (Fy - Ly) * 0.05, Lx + (Fx - Lx) * 0.46, Ly + (Fy - Ly) * 0.46],
+      [Lx + (Fx - Lx) * 0.54, Ly + (Fy - Ly) * 0.54, Lx + (Fx - Lx) * 0.96, Ly + (Fy - Ly) * 0.96],
+      [Fx + (Rx - Fx) * 0.04, Fy + (Ry - Fy) * 0.04, Fx + (Rx - Fx) * 0.52, Fy + (Ry - Fy) * 0.52],
+      [Fx + (Rx - Fx) * 0.60, Fy + (Ry - Fy) * 0.60, Fx + (Rx - Fx) * 0.94, Fy + (Ry - Fy) * 0.94]
+    ]) {
+      g.moveTo(x0, y0);
+      g.lineTo(x1, y1);
+    }
+    g.stroke();
+    g.restore();
+  }
+  return c;
+}
+const PAL_C1 = {
+  mode: "c1",
+  ground: "#AB956A",        // warmer, duller gold-ochre (~22% less saturated than #B29458, Y=0.548)
+  washLight: "208,190,146", // +1 value step warm gold-leaf pool
+  washDark: "120,98,62",    // -1 value step antique raw-umber/ochre pool
+  riseLit: "212,193,148",
+  riseSha: "86,68,40",
+  earth: "#987F52",
+  earthRgb: "144,118,74",
+  earthDark: "#7E663E",
+  field: "#6C835B",
+  fieldAlt: "#617750",
+  water: "#4C6684",
+  waterDeep: "#39506A",
+  waterWave: "#2E435A",
+  bank: "#7D653E",
+  plaster: "#EFE8D8",
+  ink: "#1B1B1F",
+  vermilion: "#C8372D",
+  cloudTop: "#CEB98A",
+  cloudFill: "#C3AC7B",
+  cloudBot: "#B69E6B",
+  cloudNight: "#434854"
+};
+const PAL_C0 = {
+  mode: "c0",
+  ground: "#989185",
+  washLight: "182,175,163",
+  washDark: "112,106,96",
+  riseLit: "184,177,165",
+  riseSha: "78,73,66",
+  earth: "#847D72",
+  earthRgb: "130,123,112",
+  earthDark: "#726C62",
+  field: "#7E786E",
+  fieldAlt: "#736D64",
+  water: "#606368",
+  waterDeep: "#4E5156",
+  waterWave: "#3E4044",
+  bank: "#706A60",
+  plaster: "#EFE8D8",
+  ink: "#1B1B1F",
+  vermilion: "#C8372D",
+  cloudTop: "#B2ABA0",
+  cloudFill: "#A69F93",
+  cloudBot: "#9A9387",
+  cloudNight: "#434854"
+};
+
+// Calligraphic sumi-e brush stroke: varied line weight, subtle hand irregularity along iso axes, and dry-brush kasure breaks
+function drawCalligraphicStroke(g, pts, o = {}) {
+  if (!pts || pts.length < 2) return;
+  const minW = o.minW ?? 0.65, maxW = o.maxW ?? 2.6, col = o.color || "#1B1B1F";
+  const wob = o.wobble ?? 1.25, kasure = o.kasure ?? 0.18, seed0 = o.seed ?? 17;
+  const alpha = o.alpha ?? 0.90;
+  let s = seed0;
+  const sr = () => (s = (s * 16807) % 2147483647) / 2147483647;
+
+  // Build dense screen/canvas points along the polyline
+  const samples = [];
+  let totalLen = 0;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const [x0, y0] = pts[i], [x1, y1] = pts[i + 1];
+    const dx = x1 - x0, dy = y1 - y0, segLen = Math.hypot(dx, dy);
+    if (segLen < 0.5) continue;
+    const nx = -dy / segLen, ny = dx / segLen;
+    const steps = Math.max(2, Math.ceil(segLen / 3.2));
+    for (let k = 0; k < steps; k++) {
+      const t = k / steps;
+      const d = totalLen + t * segLen;
+      const wave = Math.sin(d * 0.085 + seed0) * wob * 0.65 + (sr() - 0.5) * wob * 0.75;
+      samples.push({ x: x0 + dx * t + nx * wave, y: y0 + dy * t + ny * wave, nx, ny, d });
+    }
+    totalLen += segLen;
+  }
+  const last = pts[pts.length - 1];
+  samples.push({ x: last[0], y: last[1], nx: 0, ny: 1, d: totalLen });
+  if (samples.length < 2 || totalLen < 1) return;
+
+  g.save();
+  g.strokeStyle = col;
+  g.fillStyle = col;
+  g.lineCap = "round";
+  g.lineJoin = "round";
+
+  let inGap = false, gapRemain = 0;
+  for (let i = 0; i < samples.length - 1; i++) {
+    const a = samples[i], b = samples[i + 1];
+    const u = a.d / totalLen;
+    // Taper at ends + calligraphic pressure swell in the middle
+    const env = Math.sin(Math.pow(u, 0.85) * Math.PI);
+    const swell = 0.55 + 0.45 * Math.sin(a.d * 0.06 + seed0 * 1.7) + 0.25 * Math.cos(a.d * 0.15 + seed0);
+    const w = clamp(minW + (maxW - minW) * env * swell, 0.35, maxW * 1.15);
+
+    if (gapRemain > 0) {
+      gapRemain--;
+      // Dry-brush kasure split: faint bristle hairs across the break
+      if (sr() < 0.55) {
+        g.globalAlpha = alpha * 0.32;
+        g.lineWidth = 0.5;
+        g.beginPath();
+        g.moveTo(a.x + a.nx * 0.9, a.y + a.ny * 0.9);
+        g.lineTo(b.x + b.nx * 0.9, b.y + b.ny * 0.9);
+        g.stroke();
+      }
+      continue;
+    }
+    if (kasure > 0 && u > 0.14 && u < 0.88 && sr() < kasure * 0.22) {
+      gapRemain = 1 + Math.floor(sr() * 3);
+      inGap = true;
+      continue;
+    }
+    g.globalAlpha = alpha * (inGap ? 0.68 : 0.94);
+    inGap = false;
+    g.lineWidth = w;
+    g.beginPath();
+    g.moveTo(a.x, a.y);
+    g.lineTo(b.x, b.y);
+    g.stroke();
+  }
+  g.restore();
+}
+
+function makeTerrainC(c, g, W, H, P, r) {
+  const PAL = TEST_SUB === "c1" ? PAL_C1 : PAL_C0;
+  const k = keep(), kx = k ? k.tx : 10, ky = k ? k.ty : 10;
+
+  // 1. CONTINUOUS GOLD-OCHRE & PIGMENT GROUND ON WASHI PAPER
+  g.fillStyle = PAL.ground;
+  g.fillRect(0, 0, W, H);
+
+  // Broad, soft, low-contrast wash variation (±1 value step pools spanning 3-6 tiles)
+  const paintWashPool = (tx, ty, rxTiles, ryTiles, rot, rgb, al) => {
+    const [px, py] = P(tx, ty), rad = rxTiles * TW;
+    g.save();
+    g.translate(px, py);
+    g.scale(1, (TH / TW) * (ryTiles / rxTiles));
+    g.rotate(rot);
+    const gr = g.createRadialGradient(0, 0, rad * 0.08, 0, 0, rad);
+    gr.addColorStop(0, `rgba(${rgb},${al.toFixed(3)})`);
+    gr.addColorStop(0.55, `rgba(${rgb},${(al * 0.72).toFixed(3)})`);
+    gr.addColorStop(0.84, `rgba(${rgb},${(al * 0.28).toFixed(3)})`);
+    gr.addColorStop(1, `rgba(${rgb},0)`);
+    g.fillStyle = gr;
+    g.beginPath();
+    g.arc(0, 0, rad, 0, Math.PI * 2);
+    g.fill();
+    g.restore();
+  };
+
+  // Curated broad lighter (+1 value step) and darker (-1 value step) pools around the domain
+  paintWashPool(kx + 0.6, ky + 0.4, 4.4, 3.6, -0.18, PAL.washLight, 0.42);
+  paintWashPool(kx - 3.6, ky + 2.8, 3.8, 3.0, 0.22, PAL.washDark, 0.38);
+  paintWashPool(kx + 4.8, ky + 1.8, 4.2, 3.3, -0.15, PAL.washLight, 0.36);
+  paintWashPool(kx + 1.4, ky + 5.2, 4.0, 3.1, 0.14, PAL.washDark, 0.36);
+  paintWashPool(kx - 2.2, ky - 2.8, 3.6, 2.8, -0.24, PAL.washDark, 0.34);
+  paintWashPool(kx + 3.2, ky - 2.4, 3.9, 3.0, 0.19, PAL.washLight, 0.35);
+  for (let i = 0; i < 12; i++) {
+    const isLight = i % 2 === 0;
+    const tx = (0.1 + 0.8 * r()) * MAP, ty = (0.1 + 0.8 * r()) * MAP;
+    paintWashPool(tx, ty, 3.0 + r() * 2.4, 2.4 + r() * 1.8, (r() - 0.5) * 0.7, isLight ? PAL.washLight : PAL.washDark, isLight ? 0.30 : 0.28);
+  }
+
+  // Subtle gold-leaf kirihaku mineral brush sweeps using ui_dry
+  if (IMG.ui_dry && IMG.ui_dry.width > 2) {
+    const dryLight = tinted(IMG.ui_dry, "#E6D4A8", 1);
+    const dryDark = tinted(IMG.ui_dry, "#5C4728", 1);
+    for (let i = 0; i < 24; i++) {
+      const [px, py] = P(r() * MAP, r() * MAP);
+      const dw = (2.4 + r() * 3.2) * TW, dh = dw * 0.22;
+      g.save();
+      g.translate(px, py);
+      g.rotate((i % 2 === 0 ? 0.52 : -0.52) + (r() - 0.5) * 0.18);
+      g.globalAlpha = 0.055 + r() * 0.045;
+      g.drawImage(i % 2 === 0 ? dryLight : dryDark, -dw / 2, -dh / 2, dw, dh);
+      g.restore();
+    }
+  }
+
+  // Authentic washi paper grain & fine kozo mulberry fibres
+  for (let i = 0; i < 24000; i++) {
+    g.fillStyle = r() < 0.52 ? "rgba(242,232,206,0.082)" : "rgba(56,42,24,0.072)";
+    g.fillRect(r() * W, r() * H, 1 + r() * 2.2, 0.9 + r() * 1.2);
+  }
+  g.save();
+  g.lineWidth = 0.55;
+  for (let i = 0; i < 2600; i++) {
+    const fx = r() * W, fy = r() * H, ang = r() * Math.PI * 2, flen = 6 + r() * 13;
+    g.strokeStyle = i % 2 === 0 ? "rgba(244,234,210,0.085)" : "rgba(62,48,28,0.068)";
+    g.beginPath();
+    g.moveTo(fx, fy);
+    g.quadraticCurveTo(fx + Math.cos(ang + 0.3) * flen * 0.5, fy + Math.sin(ang + 0.3) * flen * 0.5, fx + Math.cos(ang) * flen, fy + Math.sin(ang) * flen);
+    g.stroke();
+  }
+  g.restore();
+
+  // Distant mountain ink silhouette behind the top edge of the board
+  if (IMG.mtn_strip && IMG.mtn_strip.width > 2) {
+    const m = IMG.mtn_strip, mw = MAP * TW * 1.05, mh = mw * m.height / m.width, [tx, ty] = P(0, 0);
+    g.save(); g.globalAlpha = 0.44; g.drawImage(m, tx - mw / 2, ty - mh + 26, mw, mh); g.restore();
+  }
+
+  // 2. GENTLE EARTHEN RISE UNDER THE KEEP (no boxed plateau wall; brushed ink ridge + soft shadow side)
+  const drawGentleEarthenRise = (cx, cy, rx, ry, seedBase) => {
+    // Upper-left sunlit crown wash
+    paintWashPool(cx - rx * 0.16, cy - ry * 0.16, rx * 1.15, ry * 1.05, -0.15, PAL.riseLit, 0.36);
+
+    // Soft feathered shadow slope on the front-left (SW) and front-right (SE) flanks under the keep base
+    const slopePtsFrontLeft = [
+      [cx - rx * 0.86, cy + ry * 0.12],
+      [cx - rx * 0.52, cy + ry * 0.66],
+      [cx - rx * 0.08, cy + ry * 0.86]
+    ];
+    const slopePtsFrontRight = [
+      [cx + rx * 0.18, cy + ry * 0.86],
+      [cx + rx * 0.68, cy + ry * 0.54],
+      [cx + rx * 0.88, cy + ry * 0.06],
+      [cx + rx * 0.66, cy - ry * 0.42]
+    ];
+
+    // Paint soft shadow wash pools along the earthen slope (5 spaced pools, low alpha so they blend gently)
+    for (let t = 0.15; t <= 0.86; t += 0.22) {
+      const lx = cx - rx * 0.78 + t * (rx * 0.66), ly = cy + ry * 0.20 + Math.sin(t * Math.PI * 0.65) * (ry * 0.64);
+      paintWashPool(lx, ly + 0.32, 1.05, 0.78, 0.35, PAL.riseSha, 0.11 * Math.sin(t * Math.PI));
+    }
+    for (let t = 0.12; t <= 0.88; t += 0.19) {
+      const rx0 = cx + rx * 0.22 + Math.sin(t * Math.PI * 0.78) * (rx * 0.62);
+      const ry0 = cy + ry * 0.82 - t * (ry * 1.16);
+      paintWashPool(rx0 + 0.34, ry0 + 0.24, 1.20, 0.88, -0.42, PAL.riseSha, 0.14 * Math.sin(t * Math.PI));
+    }
+
+    // Dry-brush earth shading sweeps trailing down the shadow side
+    if (IMG.ui_dry && IMG.ui_dry.width > 2) {
+      const shaBrush = tinted(IMG.ui_dry, "#3B2E1B", 1);
+      for (let i = 0; i < 6; i++) {
+        const u = (i + 0.5) / 6;
+        const sx = cx + rx * (0.24 + 0.54 * Math.sin(u * 2.0));
+        const sy = cy + ry * (0.74 - u * 1.02);
+        const [px, py] = P(sx + 0.26, sy + 0.20);
+        g.save();
+        g.translate(px, py);
+        g.rotate(0.48 + (i % 3 - 1) * 0.08);
+        g.globalAlpha = 0.12;
+        g.drawImage(shaBrush, -26, -6, 52, 12);
+        g.restore();
+      }
+    }
+
+    // Calligraphic brushed ink ridge strokes along the crest
+    drawCalligraphicStroke(g, slopePtsFrontLeft.map(([x, y]) => P(x, y)), {
+      minW: 0.7, maxW: 2.5, wobble: 1.4, kasure: 0.24, seed: seedBase + 11, alpha: 0.82
+    });
+    drawCalligraphicStroke(g, slopePtsFrontRight.map(([x, y]) => P(x, y)), {
+      minW: 0.8, maxW: 3.0, wobble: 1.5, kasure: 0.22, seed: seedBase + 29, alpha: 0.88
+    });
+    // Secondary faint dry-brush toe contour along the shadow base
+    drawCalligraphicStroke(g, slopePtsFrontRight.map(([x, y]) => P(x + 0.46, y + 0.28)), {
+      minW: 0.45, maxW: 1.25, wobble: 1.6, kasure: 0.44, seed: seedBase + 47, alpha: 0.44
+    });
+  };
+
+  // Primary gentle earthen rise under the Keep
+  drawGentleEarthenRise(kx + 1.5, ky + 1.5, CH.sandbox ? 2.5 : 2.9, CH.sandbox ? 2.4 : 2.7, 101);
+  // Secondary gentle rise on the NW hillside (when space permits)
+  if (!CH.sandbox) {
+    drawGentleEarthenRise(3.3, 3.2, 2.2, 2.0, 203);
+  }
+
+  // 3. SOFT OCHRE ROADS WITH BROKEN BRUSHED INK EDGES (no dashed parallelograms)
+  const drawBrushedRoad = (waypoints, rw = 0.84, seedBase = 300) => {
+    if (!waypoints || waypoints.length < 2) return;
+    // Subdivide waypoints into smooth organic curve in tile space
+    const dense = [];
+    for (let i = 0; i < waypoints.length - 1; i++) {
+      const [x0, y0] = waypoints[i], [x1, y1] = waypoints[i + 1];
+      const dist = Math.hypot(x1 - x0, y1 - y0);
+      const steps = Math.max(3, Math.ceil(dist / 0.14));
+      for (let s = 0; s < steps; s++) {
+        const t = s / steps;
+        dense.push([x0 + (x1 - x0) * t, y0 + (y1 - y0) * t]);
+      }
+    }
+    dense.push(waypoints[waypoints.length - 1]);
+
+    // Smooth corner transitions
+    const pts = dense.map((p, i) => {
+      if (i === 0 || i === dense.length - 1) return p;
+      const prev = dense[Math.max(0, i - 2)], next = dense[Math.min(dense.length - 1, i + 2)];
+      return [(prev[0] + p[0] * 2 + next[0]) / 4, (prev[1] + p[1] * 2 + next[1]) / 4];
+    });
+
+    // Soft overlapping ochre wash dabs along the road
+    for (let i = 0; i < pts.length; i++) {
+      const [tx, ty] = pts[i];
+      const wobW = rw * (0.88 + 0.18 * Math.sin(i * 0.35 + seedBase));
+      paintWashPool(tx, ty, wobW * 0.72, wobW * 0.68, (i % 3 - 1) * 0.15, PAL.earthRgb, 0.14);
+      if (i % 2 === 0) {
+        paintWashPool(tx, ty, wobW * 0.42, wobW * 0.40, 0, PAL.washDark, 0.08);
+      }
+    }
+
+    // Build left and right road margin polylines and stroke in broken calligraphic chunks
+    const leftPts = [], rightPts = [];
+    for (let i = 0; i < pts.length; i++) {
+      const prev = pts[Math.max(0, i - 1)], next = pts[Math.min(pts.length - 1, i + 1)];
+      const dx = next[0] - prev[0], dy = next[1] - prev[1], len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len, ny = dx / len;
+      const half = rw * (0.42 + 0.05 * Math.sin(i * 0.45 + seedBase));
+      leftPts.push(P(pts[i][0] + nx * half, pts[i][1] + ny * half));
+      rightPts.push(P(pts[i][0] - nx * half, pts[i][1] - ny * half));
+    }
+
+    const strokeBrokenMargin = (marginPts, sOff) => {
+      let idx = 0;
+      let chunkSeed = seedBase + sOff;
+      while (idx < marginPts.length - 2) {
+        chunkSeed = (chunkSeed * 16807) % 2147483647;
+        const runLen = 7 + (chunkSeed % 11); // ~1.0 to 2.4 tiles of brush stroke
+        const gapLen = 3 + ((chunkSeed >> 4) % 5); // natural brush lift gap
+        const slice = marginPts.slice(idx, Math.min(marginPts.length, idx + runLen));
+        if (slice.length >= 2) {
+          drawCalligraphicStroke(g, slice, {
+            minW: 0.50, maxW: 2.15, wobble: 1.15, kasure: 0.25, seed: chunkSeed, alpha: 0.80
+          });
+        }
+        idx += runLen + gapLen;
+      }
+    };
+    strokeBrokenMargin(leftPts, 13);
+    strokeBrokenMargin(rightPts, 79);
+  };
+
+  // Soft ochre courtyard wash in front of the Keep gate
+  paintWashPool(kx + 1.5, ky + 3.2, 2.4, 1.7, 0.08, PAL.earthRgb, 0.34);
+  paintWashPool(kx - 0.8, ky + 2.2, 1.8, 1.4, -0.12, PAL.earthRgb, 0.26);
+  paintWashPool(kx + 3.6, ky + 2.0, 1.8, 1.4, 0.14, PAL.earthRgb, 0.26);
+
+  if (CH.tutorial) {
+    // First Light (16x16, keep at [7,7], houses at [5,8] and [11,9])
+    drawBrushedRoad([[kx + 1.5, 0.4], [kx + 1.5, ky + 0.5]], 0.82, 310);
+    drawBrushedRoad([[kx + 1.5, ky + 3.0], [kx + 1.5, MAP - 0.4]], 0.86, 320);
+    drawBrushedRoad([[kx + 1.5, ky + 3.1], [5.5, 9.2], [2.4, 9.2], [0.4, 9.2]], 0.78, 330);
+    drawBrushedRoad([[kx + 1.5, ky + 3.1], [11.5, 10.2], [MAP - 0.4, 10.2]], 0.78, 340);
+  } else if (CH.sandbox) {
+    // Test ground (14x14, keep at [6,6])
+    drawBrushedRoad([[kx + 1.5, 0.4], [kx + 1.5, ky + 0.4]], 0.78, 350);
+    drawBrushedRoad([[kx + 1.5, ky + 3.0], [kx + 1.5, 11.2], [9.5, 12.5]], 0.82, 360);
+    drawBrushedRoad([[kx + 1.2, ky + 3.0], [4.5, 9.5], [0.4, 9.5]], 0.76, 370);
+    drawBrushedRoad([[kx + 2.8, ky + 2.2], [11.5, 8.2], [MAP - 0.4, 8.2]], 0.76, 380);
+  } else {
+    // The Valley Keep & campaign maps
+    drawBrushedRoad([[kx + 1.5, 0.3], [kx + 1.5, ky + 0.6]], 0.84, 410);
+    drawBrushedRoad([[kx + 1.5, ky + 3.2], [kx + 1.5, MAP - 0.3]], 0.86, 420);
+    drawBrushedRoad([[kx + 3.6, ky + 2.0], [kx + 5.2, ky + 0.5], [MAP - 0.3, ky + 0.5]], 0.84, 430);
+    drawBrushedRoad([[kx - 1.2, ky + 2.6], [7.0, 12.5], [0.3, 12.5]], 0.82, 440);
+  }
+
+  // 4. MALACHITE FIELD BLOCKS WITH HAND-DRAWN BRUSHED BUND LINES
+  const drawBrushedFieldBlock = (x0, y0, cols, rows, cw, ch, seedBase = 500) => {
+    const Wb = cols * cw, Hb = rows * ch;
+    // Soft earthen mud backing under the entire field block
+    paintWashPool(x0 + Wb * 0.5, y0 + Hb * 0.5, Wb * 0.65, Hb * 0.65, 0.1, PAL.washDark, 0.32);
+
+    for (let rIdx = 0; rIdx < rows; rIdx++) {
+      for (let cIdx = 0; cIdx < cols; cIdx++) {
+        const px0 = x0 + cIdx * cw, py0 = y0 + rIdx * ch;
+        const px1 = px0 + cw, py1 = py0 + ch;
+        const fill = (rIdx + cIdx) % 2 === 0 ? PAL.field : PAL.fieldAlt;
+        const cPts = [P(px0 + 0.03, py0 + 0.03), P(px1 - 0.03, py0 + 0.03), P(px1 - 0.03, py1 - 0.03), P(px0 + 0.03, py1 - 0.03)];
+
+        // Malachite mineral wash fill
+        g.save();
+        g.beginPath();
+        cPts.forEach(([x, y], idx) => idx === 0 ? g.moveTo(x, y) : g.lineTo(x, y));
+        g.closePath();
+        g.fillStyle = fill;
+        g.fill();
+
+        // Subtle internal wet-soil & mineral variation inside the plot
+        g.clip();
+        const [cx, cy] = P((px0 + px1) * 0.5, (py0 + py1) * 0.5);
+        const gr = g.createRadialGradient(cx - 8, cy - 4, 2, cx, cy, cw * TW * 0.6);
+        gr.addColorStop(0, "rgba(210,220,190,0.13)");
+        gr.addColorStop(0.6, "rgba(0,0,0,0)");
+        gr.addColorStop(1, "rgba(32,42,24,0.22)");
+        g.fillStyle = gr;
+        g.fillRect(cx - cw * TW, cy - ch * TH, cw * TW * 2, ch * TH * 2);
+
+        // Hand-brushed rice seedling tufts in organic rows
+        g.strokeStyle = "rgba(27,27,31,0.52)";
+        g.lineCap = "round";
+        for (let sy = py0 + 0.32; sy < py1 - 0.22; sy += 0.42) {
+          for (let sx = px0 + 0.32; sx < px1 - 0.22; sx += 0.44) {
+            const jx = sx + (r() - 0.5) * 0.08, jy = sy + (r() - 0.5) * 0.08;
+            const [ux, uy] = P(jx, jy);
+            g.lineWidth = 0.85 + r() * 0.45;
+            g.beginPath();
+            g.moveTo(ux - 1.5, uy + 1); g.lineTo(ux - 3.2, uy - 2.8 - r() * 1.5);
+            g.moveTo(ux + 0.5, uy + 1); g.lineTo(ux + 0.2, uy - 3.4 - r() * 1.4);
+            g.moveTo(ux + 2.0, uy + 1); g.lineTo(ux + 3.5, uy - 2.5 - r() * 1.5);
+            g.stroke();
+          }
+        }
+        g.restore();
+
+        // Raised earthen mud ridge backing along plot edges
+        const edges = [[cPts[0], cPts[1]], [cPts[1], cPts[2]], [cPts[2], cPts[3]], [cPts[3], cPts[0]]];
+        for (let eIdx = 0; eIdx < edges.length; eIdx++) {
+          const [pA, pB] = edges[eIdx];
+          drawCalligraphicStroke(g, [pA, pB], {
+            minW: 2.6, maxW: 4.4, wobble: 1.2, kasure: 0.05, color: PAL.earthDark, seed: seedBase + rIdx * 31 + cIdx * 17 + eIdx * 7, alpha: 0.72
+          });
+          // Hand-drawn brushed sumi ink bund line on top
+          drawCalligraphicStroke(g, [pA, pB], {
+            minW: 0.75, maxW: 2.45, wobble: 1.35, kasure: 0.22, color: PAL.ink, seed: seedBase + rIdx * 53 + cIdx * 29 + eIdx * 11, alpha: 0.88
+          });
+        }
+      }
+    }
+  };
+
+  if (CH.tutorial) {
+    // First Light: malachite field blocks on west & north-east sides of the village
+    drawBrushedFieldBlock(2.2, 6.2, 2, 2, 1.35, 1.25, 510);
+    drawBrushedFieldBlock(11.4, 5.2, 2, 2, 1.35, 1.25, 560);
+  } else if (CH.sandbox) {
+    // Test ground: contiguous malachite field block in the south-west clearing (complementing the granary paddies)
+    drawBrushedFieldBlock(6.2, 2.2, 2, 2, 1.35, 1.25, 610);
+  } else {
+    drawBrushedFieldBlock(3.2, 9.8, 2, 3, 1.95, 1.50, 710);
+    if (MAP >= 20) {
+      drawBrushedFieldBlock(12.8, 5.4, 2, 2, 1.85, 1.95, 750);
+      drawBrushedFieldBlock(8.0, 15.6, 2, 2, 1.65, 1.85, 790);
+    }
+  }
+
+  // 5. WATER: Azurite (#4C6684 on c1, #606368 on c0) river channel with brushed ink banks & timber bridge
+  if (CH.river) {
+    const rx = CH.river.x, rw = 1.26, bw = 0.28;
+    const bankPts = [P(rx - bw, 0), P(rx + rw + bw, 0), P(rx + rw + bw, MAP), P(rx - bw, MAP)];
+    g.save();
+    g.beginPath(); bankPts.forEach(([x, y], i) => i ? g.lineTo(x, y) : g.moveTo(x, y)); g.closePath();
+    g.fillStyle = PAL.bank; g.fill();
+    g.restore();
+
+    const waterPts = [P(rx, 0), P(rx + rw, 0), P(rx + rw, MAP), P(rx, MAP)];
+    g.save();
+    g.beginPath(); waterPts.forEach(([x, y], i) => i ? g.lineTo(x, y) : g.moveTo(x, y)); g.closePath();
+    g.fillStyle = PAL.water; g.fill();
+    g.strokeStyle = PAL.waterWave;
+    g.lineWidth = 1.25;
+    g.lineCap = "round";
+    for (let ty = 0.4; ty < MAP - 0.4; ty += 0.85) {
+      for (const ox of [0.26, 0.62, 0.96]) {
+        const [wx0, wy0] = P(rx + ox, ty);
+        const [wx1, wy1] = P(rx + ox, ty + 0.50);
+        g.beginPath(); g.moveTo(wx0, wy0); g.quadraticCurveTo(wx0 - 2, (wy0 + wy1) * 0.5, wx1, wy1); g.stroke();
+      }
+    }
+    g.restore();
+
+    // Brushed ink riverbanks
+    const westBank = [], eastBank = [];
+    for (let ty = 0; ty <= MAP; ty += 0.8) {
+      westBank.push(P(rx + (r() - 0.5) * 0.06, ty));
+      eastBank.push(P(rx + rw + (r() - 0.5) * 0.06, ty));
+    }
+    drawCalligraphicStroke(g, westBank, { minW: 0.9, maxW: 2.8, wobble: 1.4, kasure: 0.16, seed: 811 });
+    drawCalligraphicStroke(g, eastBank, { minW: 0.9, maxW: 2.8, wobble: 1.4, kasure: 0.16, seed: 829 });
+
+    // Timber bridge at CH.river.bridge
+    const by0 = CH.river.bridge - 0.15, by1 = CH.river.bridge + 1.35;
+    const brPts = [P(rx - 0.32, by0), P(rx + rw + 0.32, by0), P(rx + rw + 0.32, by1), P(rx - 0.32, by1)];
+    g.save();
+    g.beginPath(); brPts.forEach(([x, y], i) => i ? g.lineTo(x, y) : g.moveTo(x, y)); g.closePath();
+    g.fillStyle = "#B89E6C"; g.fill();
+    g.restore();
+    drawCalligraphicStroke(g, [brPts[0], brPts[1]], { minW: 1.2, maxW: 2.6, wobble: 0.8, kasure: 0.08, seed: 853 });
+    drawCalligraphicStroke(g, [brPts[3], brPts[2]], { minW: 1.2, maxW: 2.6, wobble: 0.8, kasure: 0.08, seed: 859 });
+  }
+
+  // 6. SOFT INK-WASH GROVE FLOORS UNDER TREE CLUMPS & LANDMARKS (no geometric boxes)
+  for (const p of S.props) {
+    if (TREES.has(p.art)) {
+      paintWashPool(p.tx + 0.5 + (p.ox || 0), p.ty + 0.5 + (p.oy || 0), 1.45, 1.18, 0, "34,30,24", 0.18);
+    } else if (LANDMARKS[p.art]) {
+      paintWashPool(p.tx + 1.0, p.ty + 1.0, 1.75, 1.45, 0, PAL.earthRgb, 0.36);
+    }
+  }
+
+  // 7. C3 (c): DEFINE THE PLAYABLE EDGE (soft darker ochre wash + faint brushed boundary where the land ends)
+  for (let t = 0.5; t <= MAP - 0.5; t += 1.25) {
+    // Top-Right (y=0) and Top-Left (x=0) outer ochre rim wash
+    paintWashPool(t, -0.45, 1.85, 1.35, 0.25, PAL.washDark, 0.32);
+    paintWashPool(-0.45, t, 1.85, 1.35, -0.25, PAL.washDark, 0.32);
+    // Bottom-Right (x=MAP) and Bottom-Left (y=MAP) deeper drop-off ochre/umber wash
+    paintWashPool(MAP + 0.48, t, 2.05, 1.50, -0.30, PAL.riseSha, 0.26);
+    paintWashPool(t, MAP + 0.48, 2.05, 1.50, 0.30, PAL.riseSha, 0.26);
+  }
+  const strokePlayableEdge = (x0, y0, x1, y1, seedEdge, isShadowSide) => {
+    const pts = [];
+    const steps = MAP * 3;
+    for (let i = 0; i <= steps; i++) {
+      const u = i / steps;
+      const wob = Math.sin(u * Math.PI * 5 + seedEdge) * 0.08;
+      pts.push(P(x0 + (x1 - x0) * u + wob, y0 + (y1 - y0) * u - wob));
+    }
+    // Soft earthen border band
+    drawCalligraphicStroke(g, pts, {
+      minW: 2.2, maxW: 4.8, wobble: 1.5, kasure: 0.14, color: PAL.earthDark, seed: seedEdge + 3, alpha: isShadowSide ? 0.58 : 0.42
+    });
+    // Faint broken dry-brush sumi-ink boundary line
+    let idx = 0, s = seedEdge + 19;
+    while (idx < pts.length - 2) {
+      s = (s * 16807) % 2147483647;
+      const run = 6 + (s % 9), gap = 2 + ((s >> 4) % 4);
+      const sl = pts.slice(idx, Math.min(pts.length, idx + run));
+      if (sl.length >= 2) {
+        drawCalligraphicStroke(g, sl, {
+          minW: 0.55, maxW: isShadowSide ? 2.1 : 1.55, wobble: 1.35, kasure: 0.30, color: PAL.ink, seed: s, alpha: isShadowSide ? 0.68 : 0.48
+        });
+      }
+      idx += run + gap;
+    }
+  };
+  strokePlayableEdge(0, 0, MAP, 0, 901, false);
+  strokePlayableEdge(0, 0, 0, MAP, 919, false);
+  strokePlayableEdge(MAP, 0, MAP, MAP, 937, true);
+  strokePlayableEdge(0, MAP, MAP, MAP, 953, true);
+}
+
+// 3-5 LARGE, LAYERED SUYARI-GASUMI BANDS WITH STEPPED/SCALLOPED ENDS AT MAP EDGES ONLY
+function drawEdgeCloudsC(na) {
+  const PAL = TEST_SUB === "c1" ? PAL_C1 : PAL_C0;
+  // C3 (b): Measure live bottom of #obj ('FIRST LIGHT / TEST GROUND' objective bar) so NO cloud band ever crosses it or the top HUD rule
+  const objEl = document.getElementById("obj");
+  const topEl = document.getElementById("top");
+  const objRect = objEl ? objEl.getBoundingClientRect() : null;
+  const topRect = topEl ? topEl.getBoundingClientRect() : null;
+  const topHudBottom = Math.max(158, objRect && objRect.bottom > 0 ? objRect.bottom + 14 : 0, topRect && topRect.bottom > 0 ? topRect.bottom + 14 : 0);
+
+  // Build list of screen-space exclusion boxes for all props, buildings, units, and HUD controls
+  // so cloud bands NEVER overlap props or units
+  const avoidBoxes = [
+    [0, 0, vw, topHudBottom],        // entire top HUD + objective bar across full screen width
+    [0, vh - 220, 128, 130],         // bottom-left minimap
+    [vw - 72, vh - 340, 72, 240],    // right zoom controls
+    [vw / 2 - 175, vh - 72, 350, 72] // bottom action buttons
+  ];
+  for (const p of S.props) {
+    if (p.invisible) continue;
+    const c = iso(p.tx + (p.w || 1) * 0.5 + (p.ox || 0), p.ty + (p.h || 1) * 0.5 + (p.oy || 0)), s = toScreen(c.X, c.Y);
+    const padW = 46 * cam.z, padH = 92 * cam.z;
+    avoidBoxes.push([s.x - padW, s.y - padH, padW * 2, padH + 18 * cam.z]);
+  }
+  for (const b of S.buildings) {
+    const c = iso(b.tx + b.w * 0.5, b.ty + b.h * 0.5), s = toScreen(c.X, c.Y);
+    const padW = b.w * 38 * cam.z, padH = b.h * 64 * cam.z;
+    avoidBoxes.push([s.x - padW, s.y - padH, padW * 2, padH + 22 * cam.z]);
+  }
+  for (const u of S.units) {
+    if (u.dead || u.hidden) continue;
+    const c = iso(u.x, u.y), s = toScreen(c.X, c.Y);
+    const padW = 30 * cam.z, padH = 68 * cam.z;
+    avoidBoxes.push([s.x - padW, s.y - padH, padW * 2, padH + 14 * cam.z]);
+  }
+
+  ctx.save();
+  // Clip strictly below topHudBottom, above bottom action bar, and outside the playable 0..MAP diamond (with a 0.55-tile margin)
+  ctx.beginPath();
+  ctx.rect(0, topHudBottom, vw, Math.max(10, vh - topHudBottom - 64));
+  const pad = 0.55;
+  const c0 = toScreen(iso(-pad, -pad).X, iso(-pad, -pad).Y);
+  const c1 = toScreen(iso(MAP + pad, -pad).X, iso(MAP + pad, -pad).Y);
+  const c2 = toScreen(iso(MAP + pad, MAP + pad).X, iso(MAP + pad, MAP + pad).Y);
+  const c3 = toScreen(iso(-pad, MAP + pad).X, iso(-pad, MAP + pad).Y);
+  ctx.moveTo(c0.x, c0.y); ctx.lineTo(c3.x, c3.y); ctx.lineTo(c2.x, c2.y); ctx.lineTo(c1.x, c1.y); ctx.closePath();
+  ctx.clip("evenodd");
+
+  // Draw a single unified, stepped & scalloped Rakuchu rakugai-zu suyari-gasumi cloud band
+  const drawSuyariBand = (cx, cy, w, h, flipX = false) => {
+    // Keep strictly below the top objective bar (y - h*0.5 >= topHudBottom + 8) and above the bottom action bar
+    cy = clamp(cy, topHudBottom + h * 0.56, vh - 68 - h * 0.52);
+    // Shift cloud outward horizontally if it gets close to any prop or unit box
+    for (let i = 1; i < avoidBoxes.length; i++) {
+      const [ax, ay, aw, ah] = avoidBoxes[i];
+      const bx = cx - w * 0.52, by = cy - h * 0.55, bw = w * 1.04, bh = h * 1.10;
+      if (bx + bw > ax && bx < ax + aw && by + bh > ay && by < ay + ah) {
+        if (cx < vw * 0.5) cx = Math.min(cx, ax - w * 0.54);
+        else cx = Math.max(cx, ax + aw + w * 0.54);
+      }
+    }
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    if (flipX) ctx.scale(-1, 1);
+
+    const y0 = -0.46 * h, y1 = -0.14 * h, y2 = 0.20 * h, y3 = 0.48 * h;
+    const rTop = (y1 - y0) * 0.5, rMid = (y2 - y1) * 0.25, rBot = (y3 - y2) * 0.5;
+    const xL1 = -0.34 * w, xR1 = 0.18 * w;
+    const xL2 = -0.50 * w, xR2 = 0.50 * w;
+    const xL3 = -0.16 * w, xR3 = 0.36 * w;
+
+    ctx.beginPath();
+    ctx.moveTo(xL1, y0);
+    ctx.lineTo(xR1, y0);
+    ctx.arc(xR1, y0 + rTop, rTop, -Math.PI / 2, Math.PI / 2, false);
+    ctx.lineTo(xR2, y1);
+    ctx.arc(xR2, y1 + rMid, rMid, -Math.PI / 2, Math.PI / 2, false);
+    ctx.arc(xR2 + rMid * 0.35, y1 + rMid * 3, rMid, -Math.PI / 2, Math.PI / 2, false);
+    ctx.lineTo(xR3, y2);
+    ctx.arc(xR3, y2 + rBot, rBot, -Math.PI / 2, Math.PI / 2, false);
+    ctx.lineTo(xL3, y3);
+    ctx.arc(xL3, y2 + rBot, rBot, Math.PI / 2, -Math.PI / 2, false);
+    ctx.lineTo(xL2, y2);
+    ctx.arc(xL2 - rMid * 0.35, y1 + rMid * 3, rMid, Math.PI / 2, -Math.PI / 2, false);
+    ctx.arc(xL2, y1 + rMid, rMid, Math.PI / 2, -Math.PI / 2, false);
+    ctx.lineTo(xL1, y1);
+    ctx.arc(xL1, y0 + rTop, rTop, Math.PI / 2, -Math.PI / 2, false);
+    ctx.closePath();
+
+    if (na > 0.5) {
+      ctx.fillStyle = PAL.cloudNight;
+    } else {
+      const gr = ctx.createLinearGradient(0, y0, 0, y3);
+      gr.addColorStop(0, PAL.cloudTop);
+      gr.addColorStop(0.52, PAL.cloudFill);
+      gr.addColorStop(1, PAL.cloudBot);
+      ctx.fillStyle = gr;
+    }
+    ctx.fill();
+
+    ctx.save();
+    ctx.clip();
+    ctx.fillStyle = na > 0.5 ? "rgba(255,255,255,0.03)" : "rgba(248,238,212,0.16)";
+    ctx.fillRect(-w * 0.5, y0, w, (y3 - y0) * 0.38);
+    ctx.restore();
+
+    ctx.strokeStyle = PAL.ink;
+    ctx.lineWidth = 1.15;
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    ctx.globalAlpha = 0.84;
+    ctx.stroke();
+
+    ctx.lineWidth = 0.95;
+    ctx.globalAlpha = 0.68;
+    ctx.beginPath();
+    ctx.moveTo(xR1, y1);
+    ctx.lineTo(xR1 - w * 0.24, y1);
+    ctx.arc(xR1 - w * 0.24, y1 + 3.5, 3.5, -Math.PI / 2, Math.PI * 0.65, true);
+    ctx.moveTo(xL3, y2);
+    ctx.lineTo(xL3 + w * 0.26, y2);
+    ctx.arc(xL3 + w * 0.26, y2 - 3.5, 3.5, Math.PI / 2, -Math.PI * 0.65, true);
+    ctx.stroke();
+
+    ctx.restore();
+  };
+
+  // 4 large framing suyari-gasumi cloud formations pushed lower along the left/right flanks and bottom edge
+  const cloudFormations = [
+    [-2.2, MAP * 0.44, 5.0, 50, false],
+    [-2.4, MAP * 0.80, 4.6, 46, true],
+    [MAP * 0.44, -2.2, 5.0, 50, true],
+    [MAP * 0.82, -2.3, 4.6, 46, false],
+    [MAP * 0.65, MAP + 1.55, 5.2, 50, false]
+  ];
+  for (const [tx, ty, wTiles, hPx, flip] of cloudFormations) {
+    const p = iso(tx, ty), s = toScreen(p.X, p.Y);
+    drawSuyariBand(s.x, s.y, TW * wTiles * cam.z, hPx * cam.z, flip);
+  }
+  ctx.restore();
+}
 function makeVariants() {
+  if (IS_BOARD_C || STYLE_V2) {
+    for (const [id, a] of Object.entries(ASSETS)) {
+      if (a.wpp && !a.iso && !a.ink && !a.setpiece && IMG[id] && IMG[id].width > 4) {
+        IMG[id] = cleanUnitPaperForGold(IMG[id], id);
+      }
+    }
+  }
+  if (IS_BOARD_C) {
+    const propAndLegacyRe = STYLE_V2
+      ? /^(pine|pine2|win_pine|aut_pine|sc_bamboo|aut_bamboo|sc_maple|aut_maple|win_maple|spr_cherry|sc_deadtree|sc_shrub|sc_grass|sc_reeds|sc_pond|aut_pile|fxw_tree_up|fxw_tree_lean|fxw_tree_fall|rocks|sc_rocks|bale|farm_bales_s|farm_bales_l|farm_rack0|farm_rack1|vp_|pal_wall_a|pal_wall_b|pal_corner|pal_gate|pal_gate_open|sp_|range_|hideout_|dojo_|gra_scaffold|sf_|dmg_|house_sf|house_dmg|keep_dmg|tower_dmg|smith_sf|tower_sf|lumber_sf)/
+      : /^(pine|pine2|win_pine|aut_pine|sc_bamboo|aut_bamboo|sc_maple|aut_maple|win_maple|spr_cherry|sc_deadtree|sc_shrub|sc_grass|sc_reeds|sc_pond|aut_pile|fxw_tree_up|fxw_tree_lean|fxw_tree_fall|rocks|sc_rocks|bale|farm_bales_s|farm_bales_l|farm_rack0|farm_rack1|vp_|pal_wall_a|pal_wall_b|pal_corner|pal_gate|pal_gate_open|sp_|range_|hideout_|dojo_|stable_|temple_|gra_scaffold|sf_|dmg_|house_sf|house_dmg|keep_dmg|tower_dmg|smith_sf|tower_sf|lumber_sf)/;
+    const cleanedBySrc = new Map();
+    for (const id of Object.keys(IMG)) {
+      if (propAndLegacyRe.test(id) && IMG[id] && IMG[id].width > 4) {
+        const cacheKey = (ASSETS[id] && ASSETS[id].src) ? ASSETS[id].src + "::" + id.split("_t")[0] : id;
+        if (!cleanedBySrc.has(cacheKey)) {
+          cleanedBySrc.set(cacheKey, cleanPropOrLegacyBldgForGold(IMG[id], id));
+        }
+        IMG[id] = cleanedBySrc.get(cacheKey);
+      }
+    }
+  } else if (STYLE_V2) {
+    for (const id of ["hideout_t1", "hideout_t2", "hideout_t3"]) {
+      if (IMG[id] && IMG[id].width > 4) IMG[id] = cleanPropOrLegacyBldgForGold(IMG[id], id);
+    }
+  }
   for (const id of Object.keys(ASSETS).filter(k => k.startsWith("vp_"))) NIGHT_IMG[id] = tinted(IMG[id], "rgb(31,38,51)", .58);
   for (const id of [...SETPIECES, "aut_maple", "aut_pine", "aut_bamboo", "spr_cherry"]) NIGHT_IMG[id] = tinted(IMG[id], "rgb(31,38,51)", .58);
   for (const id of ["farmw_paddy0", "farmw_paddy1", "farmw_paddy2", "farmw_paddy3", "win_pine", "win_maple", "fxw_tree_up", "fxw_tree_lean", "fxw_tree_fall", "farm_paddy0", "farm_paddy1", "farm_paddy2", "farm_paddy3", "farm_rack0", "farm_rack1", "farm_bales_s", "farm_bales_l"]) NIGHT_IMG[id] = tinted(IMG[id], "rgb(31,38,51)", .6);
@@ -1832,7 +3166,7 @@ function makeVariants() {
   for (const k of FXB) TINT[k + "_n"] = tinted(IMG[k], "#B8C2DE", .75);
   for (const [id, a] of Object.entries(ASSETS)) if (a.ink) {
     const span = id.startsWith("lm_") ? 2 : 1; a.dispW = IMG[id].width * (span * TW * a.fit / a.diamondPx); a.dispH = 0;
-    NIGHT_IMG[id] = tinted(IMG[id], "#8C9AC0", .6);
+    NIGHT_IMG[id] = tinted(IMG[id], (IS_BOARD_A1_OR_C && (id === "sc_bamboo" || id === "sc_rocks")) ? "rgb(31,38,51)" : "#8C9AC0", .6);
   }
   // iso buildings: one world-px-per-image-px per building so every tier/scaffold/ruin shares a scale
   for (const d of Object.values(BUILDINGS)) if (d.iso) {
@@ -1851,41 +3185,84 @@ function makeTerrain() {
   let seed = 3 + MAP; const r = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
   for (let i = 0; i < 11000; i++) { g.fillStyle = r() < .5 ? "rgba(120,100,70,.05)" : "rgba(255,255,255,.12)"; g.fillRect(r() * W, r() * H, 1 + r() * 2, 1); }
   const P = (x, y) => { const p = iso(x, y); return [p.X + ox, p.Y + oy]; };
-  g.beginPath(); g.moveTo(...P(0, 0)); g.lineTo(...P(MAP, 0)); g.lineTo(...P(MAP, MAP)); g.lineTo(...P(0, MAP)); g.closePath();
-  g.fillStyle = "rgba(255,252,244,.4)"; g.fill();
+  if (IS_BOARD_C) {
+    makeTerrainC(c, g, W, H, P, r);
+    terrain = c;
+    const n = document.createElement("canvas"); n.width = c.width; n.height = c.height;
+    const gn = n.getContext("2d"); gn.drawImage(c, 0, 0);
+    gn.globalCompositeOperation = "multiply"; gn.fillStyle = "#5c667a"; gn.fillRect(0, 0, n.width, n.height);
+    gn.globalCompositeOperation = "source-over"; gn.fillStyle = "rgba(22,28,40,.38)"; gn.fillRect(0, 0, n.width, n.height);
+    terrainNight = n;
+    return;
+  }
+  const B_A1 = TEST_FLAG === "board" && TEST_SUB === "a1";
+  if (!B_A1) {
+    g.beginPath(); g.moveTo(...P(0, 0)); g.lineTo(...P(MAP, 0)); g.lineTo(...P(MAP, MAP)); g.lineTo(...P(0, MAP)); g.closePath();
+    g.fillStyle = "rgba(255,252,244,.4)"; g.fill();
+  }
   const dry = IMG.ui_dry, curve = IMG.ui_curve;
   const edges = [[P(0, 0), P(MAP, 0)], [P(MAP, 0), P(MAP, MAP)], [P(MAP, MAP), P(0, MAP)], [P(0, MAP), P(0, 0)]];
-  for (const [a, b] of edges) {
+  if (!B_A1) for (const [a, b] of edges) {
     const ang = Math.atan2(b[1] - a[1], b[0] - a[0]), len = hypot(b[0] - a[0], b[1] - a[1]);
     for (let k = 0; k < 3; k++) {
       g.save(); g.translate(a[0] + (b[0] - a[0]) * (.15 + k * .3), a[1] + (b[1] - a[1]) * (.15 + k * .3)); g.rotate(ang + (r() - .5) * .08);
       g.globalAlpha = .07 + r() * .06; const w = len * (.32 + r() * .1); g.drawImage(dry, -w / 2, -10 + (r() - .5) * 10, w, 24); g.restore();
     }
   }
-  g.save(); g.strokeStyle = "rgba(140,150,160,.10)"; g.lineCap = "round"; g.lineJoin = "round"; g.lineWidth = 40;
-  g.beginPath(); g.moveTo(...P(-1.8, -1));
-  for (let t = -.5; t <= MAP + 1.5; t += .25) g.lineTo(...P(-1.8 + Math.sin(t * .55) * .7, t));
-  g.stroke(); g.lineWidth = 14; g.strokeStyle = "rgba(90,100,115,.10)"; g.stroke(); g.restore();
+  if (!B_A1) {
+    g.save(); g.strokeStyle = "rgba(140,150,160,.10)"; g.lineCap = "round"; g.lineJoin = "round"; g.lineWidth = 40;
+    g.beginPath(); g.moveTo(...P(-1.8, -1));
+    for (let t = -.5; t <= MAP + 1.5; t += .25) g.lineTo(...P(-1.8 + Math.sin(t * .55) * .7, t));
+    g.stroke(); g.lineWidth = 14; g.strokeStyle = "rgba(90,100,115,.10)"; g.stroke(); g.restore();
+  }
   // painted ground tiles: forest floor under woods, packed earth around the keep, meadow elsewhere (random variant per tile)
-  if (IMG.gm0) { const k = keep(), trees = S.props.filter(p => TREES.has(p.art) || (p.art && p.art.startsWith("sp_")));
+  if (B_A1) {
+    // A1 continuous paper wash: zero per-tile outlines, zero paving seams; broad 4-8 tile wash shapes one value step darker
+    const k = keep(), trees = S.props.filter(p => TREES.has(p.art) || (p.art && p.art.startsWith("sp_")));
+    const washPool = (tx, ty, rxTiles, ryTiles, rot, col, al) => {
+      const [px, py] = P(tx, ty), rad = rxTiles * TW;
+      g.save(); g.translate(px, py); g.scale(1, (TH / TW) * (ryTiles / rxTiles)); g.rotate(rot);
+      const gr = g.createRadialGradient(0, 0, rad * .08, 0, 0, rad);
+      gr.addColorStop(0, `rgba(${col},${al})`);
+      gr.addColorStop(.62, `rgba(${col},${(al * .82).toFixed(3)})`);
+      gr.addColorStop(.86, `rgba(${col},${(al * .35).toFixed(3)})`);
+      gr.addColorStop(1, `rgba(${col},0)`);
+      g.fillStyle = gr; g.beginPath(); g.arc(0, 0, rad, 0, 7); g.fill(); g.restore();
+    };
+    if (k) {
+      // Three distinct broad 4-8 tile wash shapes visible at 375x812 (earth around keep, meadow in foreground, meadow toward bridge)
+      washPool(k.tx + 1.0, k.ty + 1.4, 2.6, 1.8, -0.18, "52,41,30", 0.135);
+      washPool(k.tx + 2.8, k.ty + 5.6, 2.7, 1.8, 0.16, "34,40,46", 0.130);
+      washPool(k.tx + 5.8, k.ty + 0.8, 2.6, 1.7, -0.14, "34,40,46", 0.125);
+    }
+    // Broad 5-8 tile wash shapes composing the empty lower-right of the 1280x800 view (east/south-east of river)
+    washPool(20.6, 11.8, 3.1, 2.1, -0.16, "34,40,46", 0.175);
+    washPool(18.2, 16.4, 2.9, 1.9, 0.20, "52,41,30", 0.165);
+    washPool(22.4, 15.6, 2.7, 1.8, -0.12, "34,40,46", 0.160);
+    for (const p of trees) washPool(p.tx + (p.w || 1) / 2, p.ty + (p.h || 1) / 2, ((p.w || 1) > 1 ? 2.5 : 1.9), ((p.w || 1) > 1 ? 1.8 : 1.4), (r() - .5) * .4, "27,27,31", 0.095);
+    for (let i = 0; i < 9; i++) {
+      const dark = r() < .62;
+      washPool(r() * MAP, r() * MAP, 2.3 + r() * 1.4, 1.6 + r() * 1.0, (r() - .5) * .5, dark ? "46,40,34" : "255,252,244", dark ? 0.095 : 0.15);
+    }
+  } else if (IMG.gm0) { const k = keep(), trees = S.props.filter(p => TREES.has(p.art) || (p.art && p.art.startsWith("sp_")));
     const tiles = [];
     for (let y = 0; y < MAP; y++) for (let x = 0; x < MAP; x++) {
       const nearTree = trees.some(p => hypot(p.tx + (p.w || 1) / 2 - x - .5, p.ty + (p.h || 1) / 2 - y - .5) < ((p.w || 1) > 1 ? 2.4 : 1.3));
       const nearKeep = k && hypot(k.tx + 1.5 - x - .5, k.ty + 1.5 - y - .5) < 3.4;
       const set = nearKeep ? "ge" : nearTree ? "gf" : "gm", v = Math.floor(r() * 6);
-      tiles.push([x, y, set + v, set === "gm" ? .22 : set === "ge" ? .2 : .2]);
+      tiles.push([x, y, set + v, TEST_FLAG === "board" ? (TEST_SUB === "c" ? .38 : .58) : (set === "gm" ? .22 : set === "ge" ? .2 : .2)]);
     }
     tiles.sort((a, b) => (a[0] + a[1]) - (b[0] + b[1]));
-    for (const [x, y, id, al] of tiles) { const im = IMG[id], [px, py] = P(x + .5, y + .5), w = TW * 2.1 * (.9 + r() * .25), h = w * im.height / im.width;
+    for (const [x, y, id, al] of tiles) { const im = IMG[id], [px, py] = P(x + .5, y + .5), w = TEST_FLAG === "board" ? TW * 1.135 : TW * 2.1 * (.9 + r() * .25), h = w * im.height / im.width;
       g.save(); g.globalAlpha = al; g.drawImage(im, px - w / 2, py - h / 2, w, h); g.restore(); } }
   // painted ground: broad meadow washes and a few ploughed fields so the land reads as lived-in, not a blank sheet
-  for (let i = 0; i < 22; i++) {
+  if (!B_A1) for (let i = 0; i < 22; i++) {
     const x = r() * MAP, y = r() * MAP, [px, py] = P(x, y), rad = (1.8 + r() * 4.5) * TW, dark = r() < .55;
     g.save(); g.translate(px, py); g.scale(1, TH / TW * (.8 + r() * .4)); g.rotate((r() - .5) * .6);
     const gr = g.createRadialGradient(0, 0, 0, 0, 0, rad); gr.addColorStop(0, dark ? `rgba(110,96,76,${.05 + r() * .05})` : "rgba(255,253,246,.16)"); gr.addColorStop(1, "rgba(110,96,76,0)");
     g.fillStyle = gr; g.beginPath(); g.arc(0, 0, rad, 0, 7); g.fill(); g.restore();
   }
-  { const k = keep(); for (let i = 0; i < 5; i++) {   // ploughed fields out in the countryside, away from the keep
+  if (!B_A1) { const k = keep(); for (let i = 0; i < 5; i++) {   // ploughed fields out in the countryside, away from the keep
     let fx = 2 + Math.floor(r() * (MAP - 6)), fy = 2 + Math.floor(r() * (MAP - 6));
     if (k && hypot(fx - k.tx, fy - k.ty) < 8) continue;
     const fw = 2 + Math.floor(r() * 2), fh = 1 + Math.floor(r() * 2), q = (x, y) => P(x, y);
@@ -1899,8 +3276,8 @@ function makeTerrain() {
       g.save(); g.globalAlpha = alpha; g.drawImage(im, px - w / 2, py - h, w, h); g.restore(); };
     const back = []; for (let t = -1; t <= MAP + 1; t += .9 + r() * .6) { back.push([t + (r() - .5) * .4, -.6 - r() * 1.2]); back.push([-.6 - r() * 1.2, t + (r() - .5) * .4]); }
     back.sort((a, b) => (a[0] + a[1]) - (b[0] + b[1])).forEach(([x, y]) => plant(x, y, .75 + r() * .45, .45 + r() * .3));
-    const reeds = [IMG.sc_reeds, IMG.sc_grass].filter(Boolean);
-    for (let t = 0; t <= MAP; t += .7 + r() * .5) for (const [x, y] of [[t, MAP + .3 + r() * .6], [MAP + .3 + r() * .6, t]]) {
+    const reeds = B_A1 ? [] : [IMG.sc_reeds, IMG.sc_grass].filter(Boolean);
+    if (reeds.length) for (let t = 0; t <= MAP; t += .7 + r() * .5) for (const [x, y] of [[t, MAP + .3 + r() * .6], [MAP + .3 + r() * .6, t]]) {
       const im = reeds[Math.floor(r() * reeds.length)], [px, py] = P(x, y), w = TW * (.7 + r() * .5), h = w * im.height / im.width;
       g.save(); g.globalAlpha = .5; g.drawImage(im, px - w / 2, py - h * .85, w, h); g.restore(); } }
   // distant mountains behind the top of the map
@@ -1915,7 +3292,7 @@ function makeTerrain() {
     const id = CH.ridge.gaps.includes(x) ? "cliff_gap" : "cliff_straight", im = IMG[id], bw = TW * 1.9, bh = bw * im.height / im.width;
     const [cx, cy] = P(x + .5, CH.ridge.sum - x + .5); g.drawImage(im, cx - bw / 2, cy - bh * .62, bw, bh);
   }
-  for (let i = 0; i < MAP * MAP * .4; i++) {
+  if (!B_A1) for (let i = 0; i < MAP * MAP * .4; i++) {
     const x = .8 + r() * (MAP - 1.6), y = .8 + r() * (MAP - 1.6), [px, py] = P(x, y);
     g.save(); g.translate(px, py); g.rotate(-.5 + r() * .3); g.globalAlpha = .08 + r() * .07; g.drawImage(curve, -12, -3, 22 + r() * 14, 6); g.restore();
   }
@@ -1933,7 +3310,16 @@ function makeTerrain() {
     const mid = Math.floor((CH.edgeMax || MAP) / 2), goals = { 0: [mid, 0], 1: [0, mid], 2: [MAP - 1, mid], 3: [mid, MAP - 1] };
     if (!CH.sandbox) for (const e of new Set(CH.edges)) {
       const pts = route(...goals[e]);
-      for (let i = 1; i < pts.length; i++) {
+      if (B_A1) {
+        // Soft, multi-tile feathered earth wash along the approach (no straight ruler stripes or tile paving)
+        for (let i = 2; i < pts.length; i += 2) {
+          const [px, py] = P((pts[i - 2][0] + pts[i][0]) / 2 + .5, (pts[i - 2][1] + pts[i][1]) / 2 + .5), rad = TW * 1.45;
+          gr.save(); gr.translate(px, py); gr.scale(1, TH / TW);
+          const wg = gr.createRadialGradient(0, 0, rad * .1, 0, 0, rad);
+          wg.addColorStop(0, "rgba(48,40,32,.026)"); wg.addColorStop(1, "rgba(48,40,32,0)");
+          gr.fillStyle = wg; gr.beginPath(); gr.arc(0, 0, rad, 0, 7); gr.fill(); gr.restore();
+        }
+      } else for (let i = 1; i < pts.length; i++) {
         const [ax, ay] = pts[i - 1], [bx, by] = pts[i], id = ax !== bx ? "rd_x" : "rd_y", im = IMG[id];
         const [mx, my] = P((ax + bx) / 2 + .5, (ay + by) / 2 + .5), w = im.width * .2, h = im.height * .2;
         gr.drawImage(im, mx - w / 2, my - h / 2, w, h);
@@ -1941,10 +3327,12 @@ function makeTerrain() {
     }
     g.save(); g.setTransform(1, 0, 0, 1, 0, 0); g.globalAlpha = .75; g.globalCompositeOperation = "darken"; g.drawImage(rl, 0, 0); g.restore(); }
   // grass and reeds painted into the ground
-  for (const [id, x, y] of S.decor || []) { const im = IMG[id], a = ASSETS[id], w = TW * a.fit * im.width / a.diamondPx, h = w * im.height / im.width;
+  if (!B_A1) for (const [id, x, y] of S.decor || []) { const im = IMG[id], a = ASSETS[id], w = TW * a.fit * im.width / a.diamondPx, h = w * im.height / im.width;
     const [px, py] = P(x + .5, y + .5); g.drawImage(im, px - w * a.pivotX, py + TH / 2 * a.fit - h, w, h); }
   // cloud bands along the map's edges: the land floats in mist, the way a folding screen frames a scene
-  { const C = P(MAP / 2, MAP / 2), bands = [IMG.fog_band_a, IMG.fog_band_b].filter(Boolean);
+  if (B_A1) {
+    // Perimeter suyari-gasumi bands are drawn in drawA1EdgeFog() so they stay strictly outside the playable field and never overlap HUD controls
+  } else { const C = P(MAP / 2, MAP / 2), bands = [IMG.fog_band_a, IMG.fog_band_b].filter(Boolean);
     if (bands.length) for (const [a, b] of edges) {
       let ang = Math.atan2(b[1] - a[1], b[0] - a[0]); const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
       if (Math.sin(ang) * (mx - C[0]) - Math.cos(ang) * (my - C[1]) < 0) ang += Math.PI;   // image "up" faces away from the land
@@ -2007,6 +3395,47 @@ function drawOrder(a, b) {
 }
 
 const fxK = () => Math.min(vw, vh) < 700 ? 1.6 : 1;   // phone: ink feedback has to be big enough to see at arm's length
+function drawA1EdgeFog(na) {
+  const bands = [IMG.fog_band_a, IMG.fog_band_b].filter(im => im && im.width > 2);
+  if (!bands.length) return;
+  const hudBoxes = [
+    [0, 0, vw, 124],
+    [0, 0, 295, 182],
+    [0, vh - 236, 140, 236],
+    [vw - 86, vh - 356, 86, 356],
+    [0, vh - 116, vw, 116]
+  ];
+  const hitsHud = (x, y, w, h) => hudBoxes.some(([hx, hy, hw, hh]) => x + w > hx && x < hx + hw && y + h > hy && y < hy + hh);
+
+  ctx.save();
+  // Clip strictly outside the playable 0..MAP diamond (with 0.65-tile buffer)
+  ctx.beginPath();
+  ctx.rect(0, 0, vw, vh);
+  const pad = 0.65;
+  const c0 = toScreen(iso(-pad, -pad).X, iso(-pad, -pad).Y);
+  const c1 = toScreen(iso(MAP + pad, -pad).X, iso(MAP + pad, -pad).Y);
+  const c2 = toScreen(iso(MAP + pad, MAP + pad).X, iso(MAP + pad, MAP + pad).Y);
+  const c3 = toScreen(iso(-pad, MAP + pad).X, iso(-pad, MAP + pad).Y);
+  ctx.moveTo(c0.x, c0.y); ctx.lineTo(c3.x, c3.y); ctx.lineTo(c2.x, c2.y); ctx.lineTo(c1.x, c1.y); ctx.closePath();
+  ctx.clip("evenodd");
+
+  // Place flat horizontal suyari-gasumi bands ONLY along the far (top) edge and the two outer side edges
+  const spots = [
+    [-1.6, -1.6, 0, 1.0],
+    [MAP * 0.24, -1.7, 1, 0.95], [MAP * 0.54, -1.7, 0, 0.92], [MAP * 0.84, -1.6, 1, 0.88],
+    [-1.7, MAP * 0.24, 0, 0.95], [-1.7, MAP * 0.54, 1, 0.92], [-1.6, MAP * 0.84, 0, 0.88]
+  ];
+  ctx.globalAlpha = na > 0.5 ? 0.55 : 0.82;
+  for (const [tx, ty, bi, sc] of spots) {
+    const im = bands[bi % bands.length];
+    const p = iso(tx, ty), s = toScreen(p.X, p.Y);
+    const w = TW * 3.6 * sc * cam.z, h = w * (im.height / im.width);
+    const bx = s.x - w / 2, by = s.y - h / 2;
+    if (hitsHud(bx, by, w, h)) continue;
+    ctx.drawImage(im, bx, by, w, h);
+  }
+  ctx.restore();
+}
 function render() {
   const t0 = performance.now();
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -2016,13 +3445,15 @@ function render() {
   const tw = terrain.width / TERR.scale * cam.z, th = terrain.height / TERR.scale * cam.z;
   const OVL = r3on();   // 3D mode: the world is drawn in WebGL underneath; this canvas becomes the transparent overlay
   if (OVL) ctx.clearRect(0, 0, vw, vh); else {
-  ctx.fillStyle = "#EDE4D3"; ctx.fillRect(0, 0, vw, vh);
+  ctx.fillStyle = IS_BOARD_C ? (TEST_SUB === "c1" ? PAL_C1.ground : PAL_C0.ground) : "#EDE4D3"; ctx.fillRect(0, 0, vw, vh);
   if (na > 0) { ctx.globalAlpha = na; ctx.fillStyle = "#1F2633"; ctx.fillRect(0, 0, vw, vh); ctx.globalAlpha = 1; }
   ctx.drawImage(terrain, o.x, o.y, tw, th);
   if (season().name === "Winter") { ctx.save(); ctx.globalAlpha = .32 * (1 - na * .6); ctx.fillStyle = "#f4f6fa"; ctx.fillRect(o.x, o.y, tw, th); ctx.globalAlpha = .08; ctx.fillStyle = "#5a6a8a"; ctx.fillRect(o.x, o.y, tw, th); ctx.restore(); }
   if (na > 0) { ctx.globalAlpha = na; ctx.drawImage(terrainNight, o.x, o.y, tw, th); ctx.globalAlpha = 1; }
 
   drawLands(na);
+  if (TEST_FLAG === "board" && TEST_SUB === "a1") drawA1EdgeFog(na);
+  if (IS_BOARD_C) drawEdgeCloudsC(na);
   }
   if (na > .05 && !OVL) {
     ctx.save(); ctx.globalCompositeOperation = "screen";
@@ -2057,7 +3488,7 @@ function render() {
     ctx.restore();
   }
   if (heroUp()) {   // hero mark: a thin vermilion brush ring under Kage
-    const h = S.hero, q = iso(h.x, h.y), s = toScreen(q.X, q.Y), r = 20 * cam.z;
+    const h = S.hero, q = iso(h.x, h.y), s = toScreen(q.X, q.Y), r = 20 * unitScaleOf(h) * cam.z;
     ctx.save(); ctx.strokeStyle = "rgba(200,55,45,.75)"; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(s.x, s.y, r, r * .5, 0, .3, Math.PI * 2 - .2); ctx.stroke(); ctx.restore();
   }
   if (ui.mode === "blink" && heroUp()) {   // blink reach
@@ -2067,7 +3498,7 @@ function render() {
   }
   for (const u of S.units) if (S.selected.has(u.id) && !u.dead) {
     // vermilion corner brackets on the ground diamond: < > and v
-    const p = iso(u.x, u.y), s = toScreen(p.X, p.Y), r = (rad(u) * 50 + 12) * cam.z, ry = r * .58, k = .38;
+    const p = iso(u.x, u.y), s = toScreen(p.X, p.Y), r = (rad(u) * 50 + 12) * unitScaleOf(u) * cam.z, ry = r * .58, k = .38;
     ctx.save(); ctx.strokeStyle = "#C8372D"; ctx.lineWidth = 2.5; ctx.lineCap = "round"; ctx.beginPath();
     for (const [vx, vy, ax, ay, bx, by] of [[-r, 0, 0, -ry, 0, ry], [r, 0, 0, -ry, 0, ry], [0, ry, -r, 0, r, 0]]) {
       ctx.moveTo(s.x + vx + (ax - vx) * k, s.y + vy + (ay - vy) * k); ctx.lineTo(s.x + vx, s.y + vy); ctx.lineTo(s.x + vx + (bx - vx) * k, s.y + vy + (by - vy) * k);
@@ -2278,6 +3709,42 @@ function drawLabels(na) {   // place names fade in at region zoom
   ctx.restore();
 }
 function drawPaddies(b, na) {   // painted paddies, one stage each
+  if (IS_BOARD_C) {
+    const PAL = TEST_SUB === "c1" ? PAL_C1 : PAL_C0;
+    for (let idx = 0; idx < (b.fields || []).length; idx++) {
+      const f = b.fields[idx];
+      const pts = [iso(f.x + 0.03, f.y + 0.03), iso(f.x + 0.97, f.y + 0.03), iso(f.x + 0.97, f.y + 0.97), iso(f.x + 0.03, f.y + 0.97)]
+        .map(p => { const s = toScreen(p.X, p.Y); return [s.x, s.y]; });
+      ctx.save();
+      ctx.beginPath();
+      pts.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y));
+      ctx.closePath();
+      ctx.fillStyle = na > 0.5 ? "#334238" : ((f.x + f.y) % 2 === 0 ? PAL.field : PAL.fieldAlt);
+      ctx.fill();
+      // Subtle internal rice shoot ticks
+      ctx.strokeStyle = na > 0.5 ? "rgba(237,228,211,0.35)" : "rgba(27,27,31,0.50)";
+      ctx.lineWidth = 1.0 * cam.z;
+      ctx.lineCap = "round";
+      for (const [ox, oy] of [[0.34, 0.36], [0.66, 0.36], [0.34, 0.66], [0.66, 0.66]]) {
+        const q = iso(f.x + ox, f.y + oy), sp = toScreen(q.X, q.Y);
+        ctx.beginPath();
+        ctx.moveTo(sp.x - 1.5 * cam.z, sp.y + 1 * cam.z); ctx.lineTo(sp.x - 3 * cam.z, sp.y - 3 * cam.z);
+        ctx.moveTo(sp.x + 1.0 * cam.z, sp.y + 1 * cam.z); ctx.lineTo(sp.x + 2.5 * cam.z, sp.y - 3 * cam.z);
+        ctx.stroke();
+      }
+      ctx.restore();
+      const edges = [[pts[0], pts[1]], [pts[1], pts[2]], [pts[2], pts[3]], [pts[3], pts[0]]];
+      for (let eIdx = 0; eIdx < 4; eIdx++) {
+        drawCalligraphicStroke(ctx, edges[eIdx], {
+          minW: 1.8 * cam.z, maxW: 3.2 * cam.z, wobble: 1.1 * cam.z, kasure: 0.08, color: PAL.earthDark, seed: (f.x * 37 + f.y * 19 + eIdx * 7) | 0, alpha: 0.70
+        });
+        drawCalligraphicStroke(ctx, edges[eIdx], {
+          minW: 0.65 * cam.z, maxW: 2.0 * cam.z, wobble: 1.2 * cam.z, kasure: 0.22, color: PAL.ink, seed: (f.x * 53 + f.y * 29 + eIdx * 11) | 0, alpha: 0.86
+        });
+      }
+    }
+    return;
+  }
   for (const f of b.fields || []) {
     if (S.occ[f.y][f.x]) continue;
     const id = (season().name === "Winter" ? "farmw_paddy" : "farm_paddy") + f.stage, c = iso(f.x + .5, f.y + .5), Y = c.Y + TH / 2 * 1.02;
@@ -2294,7 +3761,7 @@ function drawIsoBuilding(b, d, na) {
   const r = drawSprite(art, f.X, f.Y, { ox: shake, alpha: b.progress < 1 ? .92 : 1, scale: pop, flip: b.flip });
   if (na > 0) drawSprite(art, f.X, f.Y, { img: NIGHT_IMG[art], alpha: na * (b.progress < 1 ? .92 : 1), ox: shake, scale: pop, flip: b.flip });
   if (b.upg && d.sf) drawScaffoldOverlay(d, f, na, b.upg.t / b.upg.time, b.flip);
-  if (ui.bldg === b) { ctx.save(); diamondPath(b.tx, b.ty, b.w, b.h); ctx.strokeStyle = "#C8372D"; ctx.lineWidth = 2.5; ctx.stroke(); ctx.restore(); }
+  if (ui.bldg === b || SHOW_FOOTPRINT) { ctx.save(); diamondPath(b.tx, b.ty, b.w, b.h); ctx.strokeStyle = SHOW_FOOTPRINT ? TEST_CFG.footprint.color : "#C8372D"; ctx.lineWidth = ui.bldg === b ? 2.5 : TEST_CFG.footprint.lineWidth; ctx.stroke(); ctx.restore(); }
   if (ruined || (b.hp < b.maxHp * .45 && !d.damaged)) {   // fire on badly damaged buildings
     const im = IMG["fx_fire" + (1 + Math.floor(S.t * 8 + b.id) % 3)], w = 26 * cam.z;
     ctx.drawImage(im, s.x - w * .6, s.y - r.h * .55 - w, w, w * im.height / im.width);
@@ -2366,7 +3833,7 @@ function drawBuilding(b, na) {
   if (na > 0) drawSprite(d.art, c.X, Y, { img: NIGHT_IMG[d.art], alpha: na, ox: shake, scale: sc });
   if (b.upg && d.sf) drawScaffoldOverlay(d, iso(b.tx + b.w, b.ty + b.h), na, b.upg.t / b.upg.time);
   const s = toScreen(c.X, Y);
-  if (ui.bldg === b) { ctx.save(); diamondPath(b.tx, b.ty, b.w, b.h); ctx.strokeStyle = "#C8372D"; ctx.lineWidth = 2.5; ctx.stroke(); ctx.restore(); }
+  if (ui.bldg === b || SHOW_FOOTPRINT) { ctx.save(); diamondPath(b.tx, b.ty, b.w, b.h); ctx.strokeStyle = SHOW_FOOTPRINT ? TEST_CFG.footprint.color : "#C8372D"; ctx.lineWidth = ui.bldg === b ? 2.5 : TEST_CFG.footprint.lineWidth; ctx.stroke(); ctx.restore(); }
   // tier seal (code-drawn placeholder until tiered building art exists)
   if (b.tier > 0 || b.upg) {
     const sx = s.x + r.w * .3, sy = s.y - 10 * cam.z, w = 15 * Math.max(.8, cam.z);
@@ -2397,25 +3864,29 @@ function yardTrail(b) {
   return pts.length > 26 ? [] : pts;
 }
 function drawYards(na) {
-  const curve = IMG.ui_curve, tuft = IMG.sc_grass;
+  const curve = IMG.ui_curve, tuft = IMG.sc_grass, B_A1 = IS_BOARD_A1_OR_C;
   for (const b of S.buildings) {
     const d = BUILDINGS[b.type]; if (d.palisade || b.progress < .2) continue;
     const c = iso(b.tx + b.w / 2, b.ty + b.h / 2), s = toScreen(c.X, c.Y), R = (b.w + b.h) / 2 * TW * .62 * cam.z;
     let seed = b.id * 9301 + 49297; const r = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
     ctx.save(); ctx.translate(s.x, s.y + R * .12); ctx.scale(1, TH / TW);   // trodden earth: soft, slightly off-centre
     const g = ctx.createRadialGradient(R * .08, 0, R * .2, 0, 0, R);
-    g.addColorStop(0, na > .5 ? "rgba(10,12,22,.16)" : "rgba(120,104,84,.13)"); g.addColorStop(1, "rgba(120,104,84,0)");
+    g.addColorStop(0, na > .5 ? "rgba(10,12,22,.16)" : (B_A1 ? "rgba(48,42,34,.045)" : "rgba(120,104,84,.13)")); g.addColorStop(1, "rgba(120,104,84,0)");
     ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, R, 0, 7); ctx.fill(); ctx.restore();
-    ctx.save(); ctx.globalAlpha = na > .5 ? .12 : .16;   // brushed scuffs
-    for (let i = 0; i < 4; i++) { const a = r() * 6.28, rr = R * (.55 + r() * .4), x = s.x + Math.cos(a) * rr, y = s.y + Math.sin(a) * rr * TH / TW;
-      ctx.save(); ctx.translate(x, y); ctx.rotate(-.5 + r() * .3); ctx.drawImage(curve, -14 * cam.z, -3 * cam.z, (20 + r() * 16) * cam.z, 6 * cam.z); ctx.restore(); }
-    ctx.restore();
+    if (!B_A1) {
+      ctx.save(); ctx.globalAlpha = na > .5 ? .12 : .16;   // brushed scuffs
+      for (let i = 0; i < 4; i++) { const a = r() * 6.28, rr = R * (.55 + r() * .4), x = s.x + Math.cos(a) * rr, y = s.y + Math.sin(a) * rr * TH / TW;
+        ctx.save(); ctx.translate(x, y); ctx.rotate(-.5 + r() * .3); ctx.drawImage(curve, -14 * cam.z, -3 * cam.z, (20 + r() * 16) * cam.z, 6 * cam.z); ctx.restore(); }
+      ctx.restore();
+    }
     if (!b.trail || S.t - (b.trailT || -99) > 6) { b.trail = yardTrail(b); b.trailT = S.t; }
-    ctx.save(); ctx.globalAlpha = na > .5 ? .3 : .42;
-    for (let i = 1; i < b.trail.length; i++) { const [ax, ay] = b.trail[i - 1], [bx, by] = b.trail[i]; if (S.occ[ay][ax] && S.occ[ay][ax] !== b) continue;
-      const id = ax !== bx ? "rd_x" : "rd_y", im = IMG[id], q = iso((ax + bx) / 2 + .5, (ay + by) / 2 + .5), sp = toScreen(q.X, q.Y), w = im.width * .15 * cam.z, h = im.height * .15 * cam.z;
-      ctx.drawImage(im, sp.x - w / 2, sp.y - h / 2, w, h); }
-    ctx.restore();
+    if (!B_A1) {
+      ctx.save(); ctx.globalAlpha = na > .5 ? .3 : .42;
+      for (let i = 1; i < b.trail.length; i++) { const [ax, ay] = b.trail[i - 1], [bx, by] = b.trail[i]; if (S.occ[ay][ax] && S.occ[ay][ax] !== b) continue;
+        const id = ax !== bx ? "rd_x" : "rd_y", im = IMG[id], q = iso((ax + bx) / 2 + .5, (ay + by) / 2 + .5), sp = toScreen(q.X, q.Y), w = im.width * .15 * cam.z, h = im.height * .15 * cam.z;
+        ctx.drawImage(im, sp.x - w / 2, sp.y - h / 2, w, h); }
+      ctx.restore();
+    }
     // village life: a few props by trade, set just outside the front edges where nothing is built
     const kit = VILLAGE[b.type]; if (kit && done(b)) {
       const spots = [[b.tx + b.w + .35, b.ty + b.h * .55], [b.tx + b.w * .45, b.ty + b.h + .35], [b.tx + b.w + .3, b.ty + b.h + .25]];
@@ -2423,7 +3894,7 @@ function drawYards(na) {
         if (o || x >= MAP - .5 || y >= MAP - .5) continue; const id = kit[(i + b.id) % kit.length], q = iso(x, y);
         drawSprite(id, q.X, q.Y, { flip: (b.id + i) % 2 === 1 }); if (na > 0) drawSprite(id, q.X, q.Y, { img: NIGHT_IMG[id], alpha: na, flip: (b.id + i) % 2 === 1 }); }
     }
-    if (tuft) for (let i = 0; i < 3; i++) {   // a few tufts at the yard's edge
+    if (tuft && !B_A1) for (let i = 0; i < 3; i++) {   // a few tufts at the yard's edge
       const a = r() * 6.28, rr = R * (.7 + r() * .3), x = s.x + Math.cos(a) * rr, y = s.y + Math.sin(a) * rr * TH / TW, w = 18 * cam.z * (.8 + r() * .5);
       ctx.save(); ctx.globalAlpha = na > .5 ? .35 : .7; ctx.drawImage(tuft, x - w / 2, y - w * tuft.height / tuft.width, w, w * tuft.height / tuft.width); ctx.restore(); }
   }
@@ -2435,7 +3906,7 @@ function drawLands(na) {
   if (!landsCv || landsCv.width !== cv.width || landsCv.height !== cv.height) { landsCv = document.createElement("canvas"); landsCv.width = cv.width; landsCv.height = cv.height; }
   const g = landsCv.getContext("2d"), dpr = cv.width / vw;
   g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, landsCv.width, landsCv.height); g.scale(dpr, dpr);
-  g.fillStyle = na > .5 ? "rgba(14,18,32,.38)" : "rgba(214,204,186,.42)"; g.fillRect(0, 0, vw, vh);   // unclaimed land sits under a wash
+  g.fillStyle = na > .5 ? "rgba(14,18,32,.38)" : (IS_BOARD_C ? "rgba(27,27,31,.10)" : "rgba(214,204,186,.42)"); g.fillRect(0, 0, vw, vh);   // unclaimed land sits under a wash
   g.globalCompositeOperation = "destination-out";
   for (const t of T) { const q = iso(t.x, t.y), s = toScreen(q.X, q.Y), rx = t.r * TW / Math.SQRT2 * cam.z, ry = rx * TH / TW;
     g.save(); g.translate(s.x, s.y); g.scale(1, ry / rx); const gr = g.createRadialGradient(0, 0, rx * .82, 0, 0, rx);
@@ -2471,7 +3942,8 @@ function drawClaim(p, w, h, na) {
 function drawProp(p, na) {
   if (p.invisible) return;
   const a = ASSETS[p.art];
-  if (p.deco) { const c = iso(p.tx + .5, p.ty + .5), Y = c.Y + TH * .42; drawSprite(p.art, c.X, Y); if (na > 0) drawSprite(p.art, c.X, Y, { img: NIGHT_IMG[p.art], alpha: na }); return; }
+  const jx = p.ox || 0, jy = p.oy || 0;
+  if (p.deco) { const c = iso(p.tx + .5 + jx, p.ty + .5 + jy), Y = c.Y + TH * .42; drawSprite(p.art, c.X, Y); if (na > 0) drawSprite(p.art, c.X, Y, { img: NIGHT_IMG[p.art], alpha: na }); return; }
   if (a.setpiece) {   // anchored at the front vertex of its 3x3 footprint
     const c = iso(p.tx + 1.5, p.ty + 1.5), w = 3 * TW * 1.05, h = w * IMG[p.art].height / IMG[p.art].width, s2 = toScreen(c.X, c.Y + TH * 1.5 * .95);
     ctx.drawImage(IMG[p.art], s2.x - w * cam.z / 2, s2.y - h * cam.z, w * cam.z, h * cam.z);
@@ -2481,20 +3953,20 @@ function drawProp(p, na) {
   const sname = season().name, winter = sname === "Winter";
   const seasonal = sname === "Autumn" ? { sc_maple: "aut_maple", pine: "aut_pine", pine2: "aut_pine", sc_bamboo: "aut_bamboo" }[p.art]
     : sname === "Spring" && p.art === "sc_maple" && p.tx % 2 === 0 ? "spr_cherry" : null;
-  if (seasonal) { const c = iso(p.tx + .5, p.ty + .5), Y = c.Y + TH * .5, fl = p.tx % 2 === 1;
+  if (seasonal) { const c = iso(p.tx + .5 + jx, p.ty + .5 + jy), Y = c.Y + TH * .5, fl = p.tx % 2 === 1;
     drawSprite(seasonal, c.X, Y, { flip: fl }); if (na > 0) drawSprite(seasonal, c.X, Y, { img: NIGHT_IMG[seasonal], alpha: na, flip: fl }); return; }
   if (winter && (p.art === "pine" || p.art === "pine2" || p.art === "sc_maple")) {
-    const id = p.art === "sc_maple" ? "win_maple" : "win_pine", c = iso(p.tx + .5, p.ty + .5), Y = c.Y + TH * .5;
+    const id = p.art === "sc_maple" ? "win_maple" : "win_pine", c = iso(p.tx + .5 + jx, p.ty + .5 + jy), Y = c.Y + TH * .5;
     drawSprite(id, c.X, Y, { flip: p.tx % 2 === 1 }); if (na > 0) drawSprite(id, c.X, Y, { img: NIGHT_IMG[id], alpha: na, flip: p.tx % 2 === 1 }); return;
   }
   if (a.ink) {   // anchored at the bottom vertex of its ground diamond
-    const w = p.w || 1, h = p.h || 1, c = iso(p.tx + w / 2, p.ty + h / 2), Y = c.Y + (w + h) / 2 * TH / 2 * a.fit;
+    const w = p.w || 1, h = p.h || 1, c = iso(p.tx + w / 2 + jx, p.ty + h / 2 + jy), Y = c.Y + (w + h) / 2 * TH / 2 * a.fit;
     drawSprite(p.art, c.X, Y);
     if (na > 0) drawSprite(p.art, c.X, Y, { img: NIGHT_IMG[p.art], alpha: na });
     if (LANDMARKS[p.art] && !CH.tutorial) drawClaim(p, w, h, na);
     return;
   }
-  const c = iso(p.tx + .5, p.ty + .5);
+  const c = iso(p.tx + .5 + jx, p.ty + .5 + jy);
   drawSprite(p.art, c.X, c.Y + TH * .3);
   if (na > 0) drawSprite(p.art, c.X, c.Y + TH * .3, { img: NIGHT_IMG[p.art], alpha: na });
 }
@@ -2588,31 +4060,44 @@ function drawUnit(u, na) {
   // figures: a formation draws several soldiers; fallen ones disappear as it takes damage
   const figsUp = u.size > 1 ? clamp(Math.ceil(u.hp / u.maxHp * sz.figs), 1, sz.figs) : 1;
   const offs = sz.offs.slice(0, figsUp).map((o, i) => ({ o, i })).sort((a, b) => a.o[1] - b.o[1]);
-  const scale = u.size > 1 ? .9 : 1;
+  const uSc = unitScaleOf(u);
+  const scale = (u.size > 1 ? .9 : 1) * uSc;
   for (const { o, i } of offs) {
     const art = frameFor(u, i);
-    const fx = o[0] * (u.size > 1 ? 1 : 0), fy = o[1];
+    const fx = o[0] * (u.size > 1 ? uSc : 0), fy = o[1] * (u.size > 1 ? uSc : 1);
     if (!a0.floatY) shadow(p.X + fx, p.Y + fy, (cav ? 24 : u.type === "brute" || u.type === "oni" ? 22 : 13) * scale);
+    // C3 (d): Thin sumi-ink rim (replaces white paper halo under c1)
+    if (IS_BOARD_C) {
+      const rim = getInkRimImg(art);
+      if (rim) {
+        const ra = alpha * (na > 0.5 ? 0.44 : 0.36);
+        for (const [dx, dy] of [[-0.65, 0], [0.65, 0], [0, -0.65], [0, 0.65]]) {
+          drawSprite(art, p.X + fx, p.Y + fy, { img: rim, face: u.face, alpha: ra, ox: ox + dx, oy: oy + dy, rot, scale });
+        }
+      }
+    }
     drawSprite(art, p.X + fx, p.Y + fy, { face: u.face, alpha, ox, oy, rot, scale });
   }
-  // formation banner (sashimono) + size mark
+  // formation banner (sashimono) + size mark (scaled cleanly with uSc)
   if (u.size > 1 && !u.dead) {
-    const back = toScreen(p.X + sz.offs[0][0], p.Y + sz.offs[0][1]), hgt = (a0.dispH + 18) * cam.z;
-    ctx.save(); ctx.strokeStyle = "#1B1B1F"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(back.x - 6 * cam.z, back.y - 8 * cam.z); ctx.lineTo(back.x - 6 * cam.z, back.y - hgt); ctx.stroke();
-    const fw = 11 * cam.z, fh = 18 * cam.z; ctx.fillStyle = "#C8372D"; ctx.fillRect(back.x - 6 * cam.z, back.y - hgt, fw, fh);
+    const bScale = Math.sqrt(uSc);
+    const back = toScreen(p.X + sz.offs[0][0] * uSc, p.Y + sz.offs[0][1] * uSc), hgt = (a0.dispH * scale + 18 * bScale) * cam.z;
+    const px = back.x - 6 * bScale * cam.z;
+    ctx.save(); ctx.strokeStyle = "#1B1B1F"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(px, back.y - 8 * bScale * cam.z); ctx.lineTo(px, back.y - hgt); ctx.stroke();
+    const fw = 11 * bScale * cam.z, fh = 18 * bScale * cam.z; ctx.fillStyle = "#C8372D"; ctx.fillRect(px, back.y - hgt, fw, fh);
     ctx.fillStyle = "#fff"; ctx.font = `${Math.round(fw * .9)}px Yuji`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.fillText(sz.kanji, back.x - 6 * cam.z + fw / 2, back.y - hgt + fh / 2 + 1);
-    if (u.size === 9) { ctx.fillStyle = "#C8372D"; ctx.fillRect(back.x - 6 * cam.z + fw + 2, back.y - hgt + 4 * cam.z, fw * .7, fh * .7); }
+    ctx.fillText(sz.kanji, px + fw / 2, back.y - hgt + fh / 2 + 1);
+    if (u.size === 9) { ctx.fillStyle = "#C8372D"; ctx.fillRect(px + fw + 2, back.y - hgt + 4 * cam.z, fw * .7, fh * .7); }
     ctx.restore();
   }
   if (!u.worker && !u.dead && u.hp < u.maxHp) {
-    const s = toScreen(p.X, p.Y - a0.dispH - 8 - (a0.floatY || 0) - (u.size > 1 ? 12 : 0)); hpBar(s.x, s.y, u.hp / u.maxHp, u.team === "E", u.size > 1 ? 40 : 28);
+    const s = toScreen(p.X, p.Y - a0.dispH * scale - 8 - (a0.floatY || 0) - (u.size > 1 ? 12 * uSc : 0)); hpBar(s.x, s.y, u.hp / u.maxHp, u.team === "E", Math.round((u.size > 1 ? 40 : 28) * Math.sqrt(uSc)));
   }
 }
 
 function drawPlacementGrid() {
-  const na = S.nightAmt, p = ui.place, d = BUILDINGS[p.type];
-  ctx.save(); ctx.lineWidth = 1; ctx.strokeStyle = na > .5 ? "rgba(237,228,211,.14)" : "rgba(27,27,31,.10)";
+  const na = S.nightAmt, p = ui.place, d = BUILDINGS[p.type], B_A1 = TEST_FLAG === "board" && TEST_SUB === "a1";
+  ctx.save(); ctx.lineWidth = B_A1 ? .7 : 1; ctx.strokeStyle = na > .5 ? "rgba(237,228,211,.16)" : (B_A1 ? "rgba(27,27,31,.16)" : "rgba(27,27,31,.10)");
   for (let y = 1; y < MAP - 1; y++) for (let x = 1; x < MAP - 1; x++) { diamondPath(x, y, 1, 1); ctx.stroke(); }
   const ok = canPlace(p.type, p.tx, p.ty) && S.rice >= d.cost;
   diamondPath(p.tx, p.ty, d.w, d.h);
@@ -2701,7 +4186,7 @@ function drawDev() {
    on twos (12 a second). Values: ink, gray wash, paper; vermilion only for the
    Tsuru clan (banners on the keep, the weapon of every soldier).
    ========================================================================= */
-const USE3D = !/[?&]r=2d/.test(location.search);   // 3D is the default; ?r=2d shows the 2D renderer
+const USE3D = /[?&]r=3d/.test(location.search);   // 2D graphic build is the default; ?r=3d shows the 3D renderer (?r=2d kept as alias)
 const R3 = { ready: false, loading: false, S: null, bmap: new Map(), umap: new Map(), fmap: new Map(), dying: [], poseAcc: 0, last: 0 };
 let THREE = null;
 function r3on() { return USE3D && R3.ready && !!S; }
@@ -3133,7 +4618,7 @@ R3.bars = function () {
   for (const b of S.buildings) {
     const e = R3.bmap.get(b.id), d = BUILDINGS[b.type], c = iso(b.tx + b.w / 2, b.ty + b.h / 2), s = toScreen(c.X, c.Y), f = iso(b.tx + b.w, b.ty + b.h), sf = toScreen(f.X, f.Y), top = s.y - (e ? e.h : 1) * k;
     if (b.hp < b.maxHp && b.progress >= 1 && b.type !== "keep") hpBar(s.x, top - 8, b.hp / b.maxHp, false, 44);
-    if (ui.bldg === b) { ctx.save(); diamondPath(b.tx, b.ty, b.w, b.h); ctx.strokeStyle = "#C8372D"; ctx.lineWidth = 2.5; ctx.stroke(); ctx.restore(); }
+    if (ui.bldg === b || SHOW_FOOTPRINT) { ctx.save(); diamondPath(b.tx, b.ty, b.w, b.h); ctx.strokeStyle = SHOW_FOOTPRINT ? TEST_CFG.footprint.color : "#C8372D"; ctx.lineWidth = ui.bldg === b ? 2.5 : TEST_CFG.footprint.lineWidth; ctx.stroke(); ctx.restore(); }
     const bar = (frac, col) => { const bw = 64 * cam.z; ctx.fillStyle = na > .5 ? "rgba(237,228,211,.3)" : "rgba(27,27,31,.18)";
       ctx.fillRect(sf.x - bw / 2, sf.y + 6, bw, 5); ctx.fillStyle = col; ctx.fillRect(sf.x - bw / 2, sf.y + 6, bw * frac, 5); };
     if (b.progress < 1) bar(b.progress, na > .5 ? "#EDE4D3" : "#1B1B1F"); else if (b.upg) bar(b.upg.t / b.upg.time, "#C8372D");
@@ -3260,9 +4745,9 @@ const TAP_SLOP = 7;
 
 function hitTarget(u) {
   if (r3on()) return R3.hit(u);
-  const a = ASSETS[u.art], p = iso(u.x, u.y);
-  const s = toScreen(p.X, p.Y - a.dispH * .45 - (a.floatY || 0));
-  return { x: s.x, y: s.y, r: Math.max(26, a.dispH * .5 * cam.z * (u.size > 1 ? 1.35 : 1)) };
+  const a = ASSETS[u.art], p = iso(u.x, u.y), uSc = unitScaleOf(u);
+  const s = toScreen(p.X, p.Y - a.dispH * uSc * .45 - (a.floatY || 0));
+  return { x: s.x, y: s.y, r: Math.max(26 * uSc, a.dispH * uSc * .5 * cam.z * (u.size > 1 ? 1.35 : 1)) };
 }
 function pickUnit(sx, sy, team) {
   let best = null, bd = 1e9;
@@ -3798,7 +5283,7 @@ function miniBase() {
   const g = c.getContext("2d"), W = MAP * TW, H = MAP * TH;
   mini.s = Math.min(N / W, N / H) * .94; mini.ox = N / 2; mini.oy = (N - H * mini.s) / 2;
   const tw = terrain.width / TERR.scale * mini.s, th = terrain.height / TERR.scale * mini.s;
-  g.fillStyle = "#EDE4D3"; g.fillRect(0, 0, N, N);
+  g.fillStyle = IS_BOARD_C ? (TEST_SUB === "c1" ? PAL_C1.ground : PAL_C0.ground) : "#EDE4D3"; g.fillRect(0, 0, N, N);
   g.drawImage(terrain, mini.ox - (W / 2 + TERR.pad) * mini.s, mini.oy - TERR.pad * mini.s, tw, th);
   mini.base = c;
 }
@@ -3808,7 +5293,9 @@ function drawMini() {
   const g = mini.el.getContext("2d"), N = mini.el.width;
   g.drawImage(mini.base, 0, 0);
   if (S.nightAmt > 0) { g.globalAlpha = S.nightAmt * .55; g.fillStyle = "#1F2633"; g.fillRect(0, 0, N, N); g.globalAlpha = 1; }
-  for (const b of S.buildings) { const [x, y] = miniPt(b.tx + b.w / 2, b.ty + b.h / 2); g.fillStyle = S.nightAmt > .5 ? "#EDE4D3" : "#1B1B1F"; g.fillRect(x - 3 - b.w, y - 2 - b.h * .6, 6 + b.w * 2, 4 + b.h * 1.2); }
+  for (const b of S.buildings) { const [x, y] = miniPt(b.tx + b.w / 2, b.ty + b.h / 2), bw = 6 + b.w * 2, bh = 4 + b.h * 1.2;
+    if (IS_BOARD_C) { g.fillStyle = "#EFE8D8"; g.fillRect(x - 4 - b.w, y - 3 - b.h * .6, bw + 2, bh + 2); }
+    g.fillStyle = S.nightAmt > .5 ? "#EDE4D3" : "#1B1B1F"; g.fillRect(x - 3 - b.w, y - 2 - b.h * .6, bw, bh); }
   for (const u of S.units) if (!u.dead && !u.hidden && u.team !== "N") { const [x, y] = miniPt(u.x, u.y);
     if (u.team === "E") { g.fillStyle = "#EDE4D3"; g.fillRect(x - 3.5, y - 3.5, 7, 7); g.fillStyle = "#1F2633"; g.fillRect(x - 2.5, y - 2.5, 5, 5); }
     else { g.fillStyle = S.nightAmt > .5 ? "#EDE4D3" : "#1B1B1F"; g.fillRect(x - 2, y - 2, 4, 4); } }
@@ -3829,7 +5316,7 @@ document.getElementById("zoom").addEventListener("click", e => {
 });
 
 // test/debug hook (the game never uses it)
-window.__sengoku = { playtest, RULES, queued, lockText, stepTraining, get S() { return S; }, get CH() { return CH; }, get tut() { return tut; }, CMD, addUnit, ASSETS, IMG, step, start, HERO, heroLevel, palAt, newWorld, canPlace, popCap, popUsed,
+window.__sengoku = { TEST_CFG, TEST_FLAG, playtest, RULES, queued, lockText, stepTraining, get S() { return S; }, get CH() { return CH; }, get tut() { return tut; }, CMD, addUnit, ASSETS, IMG, step, start, HERO, heroLevel, palAt, newWorld, canPlace, popCap, popUsed,
   incomeRate, unlockedUnits, rangeOf, costOf, frameFor, zoomStep, zoomLevels, wxNow, drawMini, ANIM, SANDBOX, CHAPTERS, UNITS, BUILDINGS, SIZES, cam, ui, onTap, toScreen, iso, hitTarget, findPath, progress, tutorialTick, planNight,
   setRunning(v) { running = v; } };
 }
