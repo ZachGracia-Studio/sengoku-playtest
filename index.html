@@ -4054,7 +4054,7 @@ function drawGoldFog(na) {
   // off-map is always cloud: paint fog back into the cut wherever it falls outside the map diamond
   { const pts = [iso(0, 0), iso(MAP, 0), iso(MAP, MAP), iso(0, MAP)].map(p => toScreen(p.X, p.Y));
     g.beginPath(); g.rect(0, 0, vw, vh); g.moveTo(pts[0].x, pts[0].y); for (const q of pts.slice(1)) g.lineTo(q.x, q.y); g.closePath();
-    g.globalCompositeOperation = "destination-over"; g.fillStyle = pat; g.fill("evenodd"); if (na > 0) { g.fillStyle = `rgba(22,28,42,${.72 * na})`; g.fill("evenodd"); } }
+    g.globalCompositeOperation = "destination-over"; if (na > 0) { g.fillStyle = `rgba(22,28,42,${.72 * na})`; g.fill("evenodd"); } g.fillStyle = pat; g.fill("evenodd"); }   // destination-over: the tint goes in first so it sits on top
   g.globalCompositeOperation = "source-over";
   ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(fogCv, 0, 0); ctx.restore();
   // ink outline of the cloud edge: lobe arcs that face outward and aren't inside explored land
