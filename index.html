@@ -3752,7 +3752,59 @@ function drawPaddies(b, na) {   // painted paddies, one stage each
   }
 }
 
+// v2 buildings: construction, upgrade and damage states are drawn from the finished v2 art,
+// so every state stays in the same ink-and-gold family (no leftover paper-era frames).
+const CHAR_IMG = {};
+function charredOf(id) {   // burnt version: darker, flatter, drained of colour
+  if (CHAR_IMG[id] || !IMG[id]) return CHAR_IMG[id];
+  const im = IMG[id], c = document.createElement("canvas"); c.width = im.width; c.height = im.height;
+  const g = c.getContext("2d"); g.filter = "brightness(0.68) contrast(1.1) saturate(0.45)"; g.drawImage(im, 0, 0);
+  g.filter = "none"; g.globalCompositeOperation = "source-atop"; g.fillStyle = "rgba(27,27,31,.25)";
+  for (let i = 0; i < 7; i++) { const x = (i * 0.37 % 1) * c.width, y = c.height * (.15 + (i * .29 % .6)); g.beginPath(); g.ellipse(x, y, c.width * .12, c.height * .07, .4, 0, Math.PI * 2); g.fill(); }
+  return (CHAR_IMG[id] = c);
+}
+function inkScaffold(b, top, alpha) {   // brushed timber poles at the footprint corners, lashed with cross ties
+  const pts = [iso(b.tx, b.ty + b.h), iso(b.tx + b.w, b.ty + b.h), iso(b.tx + b.w, b.ty), iso(b.tx, b.ty)].map(p => toScreen(p.X, p.Y));
+  ctx.save(); ctx.globalAlpha = alpha; ctx.strokeStyle = "#1B1B1F"; ctx.lineCap = "round";
+  ctx.lineWidth = Math.max(1, 1.6 * cam.z);
+  for (const p of pts) { ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x + .5, p.y - top); ctx.stroke(); }
+  ctx.lineWidth = Math.max(.8, 1.1 * cam.z);
+  for (const f of [.33, .66, .95]) for (let i = 0; i < 3; i++) {   // ties on the three visible sides
+    const a = pts[i], c = pts[i + 1], y = top * f; ctx.beginPath(); ctx.moveTo(a.x, a.y - y); ctx.lineTo(c.x, c.y - y); ctx.stroke(); }
+  ctx.restore();
+}
+function drawIsoBuildingV2(b, d, na) {
+  const f = iso(b.tx + b.w, b.ty + b.h), s = toScreen(f.X, f.Y);
+  const shake = S.t - b.hitT < .12 ? (rnd() - .5) * 2.5 : 0;
+  const art = tierOf(b).art || d.art, pop = popScale(b);
+  const ruined = b.progress >= 1 && b.hp < b.maxHp * .45;
+  let r;
+  if (b.progress < 1) {   // under construction: faint outline of the finished building, built up from the base
+    const prog = .12 + .88 * b.progress;
+    r = drawSprite(art, f.X, f.Y, { alpha: .16, scale: pop, flip: b.flip });
+    drawSprite(art, f.X, f.Y, { clipFrac: prog, scale: pop, flip: b.flip });
+    if (na > 0) drawSprite(art, f.X, f.Y, { img: NIGHT_IMG[art], clipFrac: prog, alpha: na, scale: pop, flip: b.flip });
+    inkScaffold(b, r.h * Math.min(1, prog + .18), .8);
+  } else {
+    const img = ruined ? charredOf(art) : undefined;
+    r = drawSprite(art, f.X, f.Y, { img, ox: shake, scale: pop, flip: b.flip });
+    if (na > 0) drawSprite(art, f.X, f.Y, { img: NIGHT_IMG[art], alpha: na * (ruined ? .5 : 1), ox: shake, scale: pop, flip: b.flip });
+    if (b.upg) { const fr = b.upg.t / b.upg.time; inkScaffold(b, r.h * .9, Math.min(1, fr * 6, (1 - fr) * 6) * .75); }
+  }
+  if (ui.bldg === b || SHOW_FOOTPRINT) { ctx.save(); diamondPath(b.tx, b.ty, b.w, b.h); ctx.strokeStyle = SHOW_FOOTPRINT ? TEST_CFG.footprint.color : "#C8372D"; ctx.lineWidth = ui.bldg === b ? 2.5 : TEST_CFG.footprint.lineWidth; ctx.stroke(); ctx.restore(); }
+  if (ruined) {
+    const im = IMG["fx_fire" + (1 + Math.floor(S.t * 8 + b.id) % 3)], w = 26 * cam.z;
+    if (im) ctx.drawImage(im, s.x - w * .6, s.y - r.h * .55 - w, w, w * im.height / im.width);
+  }
+  const bar = (frac, col) => { const bw = 64 * cam.z; ctx.fillStyle = na > .5 ? "rgba(237,228,211,.3)" : "rgba(27,27,31,.18)";
+    ctx.fillRect(s.x - bw / 2, s.y + 6, bw, 5); ctx.fillStyle = col; ctx.fillRect(s.x - bw / 2, s.y + 6, bw * frac, 5); };
+  if (b.progress < 1) bar(b.progress, na > .5 ? "#EDE4D3" : "#1B1B1F");
+  else if (b.upg) bar(b.upg.t / b.upg.time, "#C8372D");
+  if (b.hp < b.maxHp && b.progress >= 1 && b.type !== "keep") hpBar(s.x, s.y + (b.upg ? 14 : 6), b.hp / b.maxHp, false, 44);
+}
+const V2_ART = new Set(["house", "keep", "granary", "lumber", "smith", "tower", "temple", "stable"]);
 function drawIsoBuilding(b, d, na) {
+  if (STYLE_V2 && V2_ART.has(b.type)) return drawIsoBuildingV2(b, d, na);
   const f = iso(b.tx + b.w, b.ty + b.h), s = toScreen(f.X, f.Y);
   const shake = S.t - b.hitT < .12 ? (rnd() - .5) * 2.5 : 0;
   const ruined = b.hp < b.maxHp * .45 && d.damaged;
