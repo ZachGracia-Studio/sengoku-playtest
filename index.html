@@ -374,15 +374,17 @@ const findTestSub = prefix => {
   return TEST_PARAMS.get(prefix) || "";
 };
 const hasTestFlag = flag => TEST_ENTRIES.some(t => t === flag || t.startsWith(flag + "=")) || TEST_PARAMS.has(flag);
-const TEST_FLAG = hasTestFlag("board") ? "board" : (TEST_PARAMS.get("test") || "").split("=")[0];
-const TEST_SUB = hasTestFlag("board") ? (findTestSub("board") || "a") : ((TEST_PARAMS.get("test") || "").split("=")[1] || "");
-const SHOW_FOOTPRINT = hasTestFlag("footprint");
 const STYLE_V2 = /[?&]style=v2\b/.test(location.search);
+// ?style=v2 alone shows the whole new direction: it implies the c1 board unless ?test=board= asks for another.
+const V2_BOARD = STYLE_V2 && !hasTestFlag("board");
+const TEST_FLAG = (hasTestFlag("board") || V2_BOARD) ? "board" : (TEST_PARAMS.get("test") || "").split("=")[0];
+const TEST_SUB = V2_BOARD ? "c1" : hasTestFlag("board") ? (findTestSub("board") || "a") : ((TEST_PARAMS.get("test") || "").split("=")[1] || "");
+const SHOW_FOOTPRINT = hasTestFlag("footprint");
 const SCALE_RAW = parseFloat(findTestSub("scale"));
 const UNIT_SCALE_MULT = hasTestFlag("scale") && Number.isFinite(SCALE_RAW) && SCALE_RAW > 0 ? SCALE_RAW : (STYLE_V2 ? 1.5 : 1.0);
 const TEST_CFG = {
   footprint: { color: "#C8372D", lineWidth: 1.75 },
-  board:     { mode: hasTestFlag("board") ? (findTestSub("board") || "a") : "" },
+  board:     { mode: TEST_FLAG === "board" ? TEST_SUB : "" },
   scale:     { mult: UNIT_SCALE_MULT, unit: UNIT_SCALE_MULT, cavalry: UNIT_SCALE_MULT, yokai: UNIT_SCALE_MULT },
   halo:      { mode: findTestSub("halo") || "c", width: 1.8, color: "#EDE4D3", shadowAlpha: 0.42, shadowScale: 1.15 },
   clouds:    { mode: findTestSub("clouds") || "b", scallopR: 54, contourWidth: 1.6, contourAlpha: 0.72, dryStrokes: 38 },
