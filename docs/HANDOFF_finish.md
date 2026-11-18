@@ -16,6 +16,8 @@ You're taking over the last stretch of the art direction for **Sengoku**, a phon
 > - **Claude: Tasks 2–6, plus the Task 1 checks.** Claude will crop, wire and footprint-check your three buildings in the running game, measure their angles, and send back fixes if needed.
 >
 > You don't need to do Tasks 2–6 or run the game.
+>
+> **Status, 18 Nov:** Claude has finished Tasks 2–6 on the branch: crowd rims, the phone HUD fix, `?style=v2` on its own, the silent `sfx()` hooks and a performance fix. Task 1, the three paintings, is the only open item. `docs/guides/consistency_sheet.png` shows what's done and what's left.
 
 Read this whole brief before starting. Work in the order given. Where a step says STOP, stop and report.
 
