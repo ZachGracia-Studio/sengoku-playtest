@@ -392,7 +392,7 @@ const TEST_FLAG = (hasTestFlag("board") || V2_BOARD) ? "board" : (TEST_PARAMS.ge
 const TEST_SUB = V2_BOARD ? "c1" : hasTestFlag("board") ? (findTestSub("board") || "a") : ((TEST_PARAMS.get("test") || "").split("=")[1] || "");
 const SHOW_FOOTPRINT = hasTestFlag("footprint");
 const SCALE_RAW = parseFloat(findTestSub("scale"));
-const UNIT_SCALE_MULT = hasTestFlag("scale") && Number.isFinite(SCALE_RAW) && SCALE_RAW > 0 ? SCALE_RAW : (STYLE_V2 ? 1.5 : 1.0);
+const UNIT_SCALE_MULT = hasTestFlag("scale") && Number.isFinite(SCALE_RAW) && SCALE_RAW > 0 ? SCALE_RAW : (STYLE_V2 ? (/[?&](u3d|s3d)=1\b/.test(location.search) ? 1.2 : 1.5) : 1.0);
 const TEST_CFG = {
   footprint: { color: "#C8372D", lineWidth: 1.75 },
   board:     { mode: TEST_FLAG === "board" ? TEST_SUB : "" },
@@ -631,16 +631,25 @@ if (STYLE_V2 && /[?&]kit=1\b/.test(location.search)) {
 }
 // ?s3d=1 (also &u3d=1): the sculpted-3D art direction. Units and buildings are baked from 3D figures at the game camera.
 const S3D = /[?&](u3d|s3d)=1\b/.test(location.search);
-const B3D = { house: ["house_t1", "house_t2", "house_t3"], keep1: ["keep_t1"], keep2: ["keep_t2"], keep3: ["keep_t3"], kura: ["farm_kura_t1", "farm_kura_t2", "farm_kura_t3"], smith: ["smith_t1", "smith_t2", "smith_t3"], lumber: ["lumber_t1", "lumber_t2", "lumber_t3"], tower: ["tower_t1", "tower_t2", "tower_t3"] };   // baked sprite -> building art ids (scaled to the footprint)
+const B3D = { house: ["house_t1", "house_t2", "house_t3"], keep1: ["keep_t1"], keep2: ["keep_t2"], keep3: ["keep_t3"], kura: ["farm_kura_t1", "farm_kura_t2", "farm_kura_t3"], smith: ["smith_t1", "smith_t2", "smith_t3"], lumber: ["lumber_t1", "lumber_t2", "lumber_t3"], tower: ["tower_t1", "tower_t2", "tower_t3"], temple: ["temple_t1", "temple_t2", "temple_t3"], stable: ["stable_t1", "stable_t2", "stable_t3"], range: ["range_t1", "range_t2", "range_t3"], hideout: ["hideout_t1", "hideout_t2", "hideout_t3"], dojo: ["dojo_t1", "dojo_t2", "dojo_t3"] };   // baked sprite -> building art ids (scaled to the footprint)
 if (S3D) for (const [id, arts] of Object.entries(B3D)) for (const a of arts) ASSETS[a] = { src: `assets/style/v2/b3d/${id}.webp`, pivotX: .5, own: true, b3d: 1 };
+// sculpted props: trees and rocks baked from 3D (bottom-centred sprites, height in world px)
+const P3D = { pine: ["pine", 118], pine2: ["pine2", 112], sc_bamboo: ["bamboo", 104], sc_maple: ["maple", 100], rocks: ["rocks", 56], sc_rocks: ["rocks2", 50] };
+if (S3D) for (const [id, [f, h]] of Object.entries(P3D)) ASSETS[id] = { ...(ASSETS[id] || {}), src: `assets/style/v2/b3d/${f}.webp`, pivotX: .5, dispH: h, fit: undefined, dispW: undefined };
 // &u3d=1: units baked from simple sculpted 3D figures (toon-shaded, palette-snapped, ink outline) at the game camera.
 // front/side/back sprites share one 600x500 canvas: feet at the bottom edge, centred. h = world px per model height.
-const U3D = { spr: { h: 52 }, sam: { h: 52 }, arc: { h: 54 }, ten: { h: 54 } };
+const U3D = { spr: { h: 52 }, sam: { h: 52 }, arc: { h: 54 }, ten: { h: 50 }, mnk: { h: 54, d: 527 }, tep: { h: 52, d: 527 }, nin: { h: 40, d: 527 }, oni: { h: 62, d: 527 }, kit: { h: 40, d: 527 }, kap: { h: 34, d: 527 }, kg: { h: 56, d: 527 } };
 if (S3D) for (const [pre, o] of Object.entries(U3D)) {
   const f = Object.values(FRAMES).find(f => f.prefix === pre); if (!f) continue;
   for (const k of Object.keys(f.meta)) { const pose = k.startsWith("back") ? "back" : k.startsWith("side") || k === "attack" || k === "death" ? "side" : "front";
-    ASSETS[`${pre}_${k}`] = { src: `assets/style/v2/u3d/${pre}_${pose}.webp`, pivotX: .5, facing: pose === "back" ? "right" : "left", wpp: o.h / 395 }; }
+    ASSETS[`${pre}_${k}`] = { src: `assets/style/v2/u3d/${pre}_${pose}.webp`, pivotX: .5, facing: pose === "back" ? "right" : "left", wpp: o.h / (o.d || 395) }; }
 }
+// palisade pieces (straight pieces run up-right; the renderer mirrors them for the other axis)
+if (S3D) { for (const id of ["pal_wall_a", "pal_wall_b", "pal_corner"]) ASSETS[id] = { src: "assets/style/v2/b3d/wall_b.webp", pw: 46 };
+  for (const id of ["pal_gate", "pal_gate_open"]) ASSETS[id] = { src: "assets/style/v2/b3d/gate_b.webp", pw: 52 }; }
+// workers (farmer + woodcutter) share the sculpted peasant figure
+if (S3D) for (const k of [...Object.keys(FRM), ...Object.keys(KK)]) { const pose = k.includes("back") ? "back" : k.includes("front") || k.includes("carry") ? "front" : "side";
+  ASSETS[k] = { src: `assets/style/v2/u3d/wk_${pose}.webp`, pivotX: .5, facing: pose === "back" ? "right" : "left", wpp: 50 / 527 }; }
 ASSETS.kage_bust = { src: "assets/kage_bust.webp" };
 
 // Unit stats per single soldier. radius = collision radius in tiles.
@@ -2651,6 +2660,23 @@ function drawCalligraphicStroke(g, pts, o = {}) {
   g.restore();
 }
 
+// s3d: re-grade the painted board into sculpted toon bands: gold ground -> meadow greens in 4 flat value
+// bands, water stays azurite, ink stays ink. Keeps every painted feature (rivers, banks, field edges) but
+// reads as the same flat-shaded clay as the baked buildings and units.
+function toonGround(c) {
+  const g = c.getContext("2d"), im = g.getImageData(0, 0, c.width, c.height), d = im.data;
+  const GR = [[76, 99, 68], [104, 130, 82], [124, 149, 96], [146, 168, 112]], WATER = [[74, 103, 136], [104, 136, 160]];
+  for (let i = 0; i < d.length; i += 4) {
+    const R = d[i], G = d[i + 1], B = d[i + 2], L = (0.3 * R + 0.59 * G + 0.11 * B) / 255;
+    let o;
+    if (B > R + 6 && B > G - 4) o = WATER[L > .5 ? 1 : 0];             // water / blue washes
+    else if (L < .22) o = [27, 27, 31];                                 // ink lines
+    else if (G > R + 4 && L > .3) o = L > .55 ? GR[3] : GR[2];          // existing greens (fields)
+    else o = L > .66 ? GR[3] : L > .55 ? GR[2] : L > .42 ? GR[1] : GR[0];
+    d[i] = o[0]; d[i + 1] = o[1]; d[i + 2] = o[2];
+  }
+  g.putImageData(im, 0, 0);
+}
 function makeTerrainC(c, g, W, H, P, r) {
   const PAL = TEST_SUB === "c1" ? PAL_C1 : PAL_C0;
   const k = keep(), kx = k ? k.tx : 10, ky = k ? k.ty : 10;
@@ -3206,6 +3232,7 @@ function makeVariants() {
     for (const [id, a] of Object.entries(ASSETS)) {
       // the range/hideout/drill-yard paintings carry a tan earth yard that the paper-stripper would eat
       if (a.src && /v2\/buildings\/(range|hideout|dojo)\.webp$/.test(a.src)) continue;
+      if (a.src && /v2\/(b3d|u3d)\//.test(a.src)) continue;   // sculpted bakes are already final
       if (a.wpp && !a.iso && !a.ink && !a.setpiece && IMG[id] && IMG[id].width > 4) {
         IMG[id] = cleanUnitPaperForGold(IMG[id], id);
       }
@@ -3217,7 +3244,7 @@ function makeVariants() {
       : /^(pine|pine2|win_pine|aut_pine|sc_bamboo|aut_bamboo|sc_maple|aut_maple|win_maple|spr_cherry|sc_deadtree|sc_shrub|sc_grass|sc_reeds|sc_pond|aut_pile|fxw_tree_up|fxw_tree_lean|fxw_tree_fall|rocks|sc_rocks|bale|farm_bales_s|farm_bales_l|farm_rack0|farm_rack1|vp_|pal_wall_a|pal_wall_b|pal_corner|pal_gate|pal_gate_open|sp_|range_|hideout_|dojo_|stable_|temple_|gra_scaffold|sf_|dmg_|house_sf|house_dmg|keep_dmg|tower_dmg|smith_sf|tower_sf|lumber_sf)/;
     const cleanedBySrc = new Map();
     for (const id of Object.keys(IMG)) {
-      if (propAndLegacyRe.test(id) && IMG[id] && IMG[id].width > 4) {
+      if (propAndLegacyRe.test(id) && IMG[id] && IMG[id].width > 4 && !(ASSETS[id] && /v2\/(b3d|u3d)\//.test(ASSETS[id].src || ""))) {
         const cacheKey = (ASSETS[id] && ASSETS[id].src) ? ASSETS[id].src + "::" + id.split("_t")[0] : id;
         if (!cleanedBySrc.has(cacheKey)) {
           cleanedBySrc.set(cacheKey, cleanPropOrLegacyBldgForGold(IMG[id], id));
@@ -3259,6 +3286,7 @@ function makeTerrain() {
   const P = (x, y) => { const p = iso(x, y); return [p.X + ox, p.Y + oy]; };
   if (IS_BOARD_C) {
     makeTerrainC(c, g, W, H, P, r);
+    if (/[?&](u3d|s3d)=1\b/.test(location.search)) toonGround(c);
     terrain = c;
     const n = document.createElement("canvas"); n.width = c.width; n.height = c.height;
     const gn = n.getContext("2d"); gn.drawImage(c, 0, 0);
@@ -3901,7 +3929,7 @@ function drawIsoBuilding(b, d, na) {
 // The corner piece is the apex where walls leave toward +x and +y.
 const PAL_K = .27;   // world px per image px — about one tile per straight piece
 function drawPalPiece(id, X, Y, ax, ay, mirror, alpha, na, shake) {
-  const im = IMG[id], w = im.width * PAL_K * cam.z, h = im.height * PAL_K * cam.z, s = toScreen(X, Y);
+  const im = IMG[id], k = ASSETS[id].pw ? ASSETS[id].pw / im.width : PAL_K, w = im.width * k * cam.z, h = im.height * k * cam.z, s = toScreen(X, Y);
   for (const [src, a] of [[im, alpha], [NIGHT_IMG[id], na * alpha]]) {
     if (!src || a <= 0) continue;
     ctx.save(); ctx.globalAlpha = a; ctx.translate(s.x + shake, s.y); if (mirror) ctx.scale(-1, 1);
