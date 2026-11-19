@@ -86,3 +86,8 @@ Kittl concepts (2048 or 832x1248 PNG) and Tripo task pages. Tripo: https://studi
 - Shuten-doji replaces the Gashadokuro boss sprite in s3d (`gsh_*`, h 100). Baked with `CROPB=1` so the wide stance keeps its feet.
 - Chōchin-obake (lantern, `lan_*`) and Kasa-obake (umbrella, `kas_*`) are their own night enemies alongside kappa and kitsune (lantern: weak spirit fodder from night 1; umbrella: fast hopper, mid nights). The 2D styles borrow kappa / kitsune art for them.
 - Tripo task ids are in /home/claude/kittl/tripo_tasks.json (round 3 entries at the end). Tripo credits are now spent (10 left).
+
+## Waiting for Tripo credits (concepts ready)
+- Yūrei ghost, the most common enemy (picked B): `cmwo370zg000100iltkc75nan` (hunched, ragged hem, hitodama flame). Alt A (taller, no flame): `cmwo370aj000000ilic7xrsh5`.
+- Oni brute: `cmwnqhy06000300ilzdxfcc7w`.
+- Both still show old 2D art in the sculpted look. Model these first when credits refresh.
