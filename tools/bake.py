@@ -7,6 +7,7 @@ from playwright.async_api import async_playwright
 PAL = np.array([[27,27,31],[58,58,64],[229,218,194],[188,176,152],[150,140,120],[74,52,40],[122,86,56],[156,127,74],[110,86,52],[199,173,112],[158,134,80],[170,166,158],[132,128,120],[96,93,88],[111,138,94],[76,99,68],[200,55,45],[140,38,32],[74,103,136],[217,180,143]],float)
 def snap(im):
     P=PAL[:-1] if os.environ.get('NORM')=='fp' else PAL
+    if os.environ.get('PAL_EXTRA'): P=np.vstack([P,np.array([[int(c) for c in t.split(',')] for t in os.environ['PAL_EXTRA'].split(';')],float)])
     a=np.asarray(im).astype(float); rgb=a[...,:3]; al=a[...,3]
     from skimage.color import rgb2lab
     L=rgb2lab(rgb/255.0); LP=rgb2lab((P/255.0)[None])[0]
