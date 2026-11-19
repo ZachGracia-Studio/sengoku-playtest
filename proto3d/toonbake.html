@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>toon bake</title>
+<style>html,body{margin:0;background:transparent}canvas{display:block}</style>
+<script type="importmap">{"imports":{"three":"./vendor/three.module.js","three/addons/":"./vendor/jsm/"}}</script>
+</head><body>
+<script type="module">
+// Bakes a GLB figure to a sprite from the game's fixed camera (45° azimuth, 35.3° elevation, orthographic).
+// ?m=models/x.glb&az=45&size=512&bands=3   -> window.__done = dataURL (transparent PNG)
+import * as THREE from "three";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+const q = new URLSearchParams(location.search);
+const SIZE = +(q.get("size") || 512), AZ = +(q.get("az") || 45) * Math.PI / 180, EL = Math.asin(37 / 64);
+const BANDS = +(q.get("bands") || 3);
+const r = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+r.setSize(SIZE, SIZE); r.setClearColor(0, 0); r.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(r.domElement);
+const scene = new THREE.Scene();
+const g = new Uint8Array(BANDS); for (let i = 0; i < BANDS; i++) g[i] = Math.round(255 * (i + 1) / BANDS);
+const grad = new THREE.DataTexture(g, BANDS, 1, THREE.RedFormat); grad.minFilter = grad.magFilter = THREE.NearestFilter; grad.needsUpdate = true;
+scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+const sun = new THREE.DirectionalLight(0xffffff, 2.2); sun.position.set(-3, 5, 4); scene.add(sun);   // light from upper-left, as the buildings
+const gltf = await new GLTFLoader().loadAsync(q.get("m"));
+const root = gltf.scene;
+root.traverse(o => { if (o.isMesh) {
+  const m = o.material; o.material = new THREE.MeshToonMaterial({ map: m.map || null, color: m.map ? 0xffffff : (m.color || new THREE.Color(0xcccccc)), gradientMap: grad });
+} });
+// normalise: feet at y=0, height 1
+const box = new THREE.Box3().setFromObject(root), h = box.max.y - box.min.y, c = box.getCenter(new THREE.Vector3());
+root.position.sub(new THREE.Vector3(c.x, box.min.y, c.z)); const wrap = new THREE.Group(); wrap.add(root); wrap.scale.setScalar(1 / h);
+wrap.rotation.y = +(q.get("rot") || 0) * Math.PI / 180;
+scene.add(wrap);
+const cam = new THREE.OrthographicCamera(-.62, .62, .62, -.62, .01, 50);
+const D = 10; cam.position.set(Math.sin(AZ) * Math.cos(EL) * D, .5 + Math.sin(EL) * D, Math.cos(AZ) * Math.cos(EL) * D); cam.lookAt(0, .5, 0);
+r.render(scene, cam);
+window.__done = r.domElement.toDataURL("image/png");
+</script></body></html>

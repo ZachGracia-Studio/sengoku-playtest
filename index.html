@@ -629,7 +629,15 @@ if (STYLE_V2 && /[?&]kit=1\b/.test(location.search)) {
   for (const id of ["pine", "pine2"]) ASSETS[id] = { ...ASSETS[id], src: K("pine_k"), pivotX: .5, dispH: 104 };
   for (const k of Object.keys(FRAMES.tengu.meta)) ASSETS[`ten_${k}`] = { src: K("tengu_k"), pivotX: .5, facing: "right", wpp: 58 / 356 };
 }
-ASSETS.kage_bust ={ src: "assets/kage_bust.webp" };
+// &u3d=1: units baked from simple sculpted 3D figures (toon-shaded, palette-snapped, ink outline) at the game camera.
+// front/side/back sprites share one 600x500 canvas: feet at the bottom edge, centred. h = world px per model height.
+const U3D = { spr: { h: 66 }, sam: { h: 66 }, arc: { h: 68 }, ten: { h: 66 } };
+if (/[?&]u3d=1\b/.test(location.search)) for (const [pre, o] of Object.entries(U3D)) {
+  const f = Object.values(FRAMES).find(f => f.prefix === pre); if (!f) continue;
+  for (const k of Object.keys(f.meta)) { const pose = k.startsWith("back") ? "back" : k.startsWith("side") || k === "attack" || k === "death" ? "side" : "front";
+    ASSETS[`${pre}_${k}`] = { src: `assets/style/v2/u3d/${pre}_${pose}.webp`, pivotX: .5, facing: pose === "back" ? "right" : "left", wpp: o.h / 395 }; }
+}
+ASSETS.kage_bust = { src: "assets/kage_bust.webp" };
 
 // Unit stats per single soldier. radius = collision radius in tiles.
 const UNITS = {
