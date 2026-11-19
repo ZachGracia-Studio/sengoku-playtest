@@ -622,7 +622,14 @@ if (TEST_FLAG === "board" && /^(a|b|c|a1|c0|c1)$/.test(TEST_SUB)) {
   if (bm === "a1") { ASSETS.rocks.dispW = 86; INK_PROPS.sc_rocks[2] = 1.28; if (ASSETS.sc_rocks) ASSETS.sc_rocks.fit = 1.28; }
   for (const id of ["farm_paddy0", "farm_paddy1", "farm_paddy2", "farm_paddy3"]) ASSETS[id].pivotX = .5;
 }
-ASSETS.kage_bust = { src: "assets/kage_bust.webp" };
+// &kit=1: gate-1 style keys (house, pine, tengu) repainted to match the character style key
+if (STYLE_V2 && /[?&]kit=1\b/.test(location.search)) {
+  const K = id => `assets/style/v2/kit/${id}.webp`;
+  for (const k of ["house_t1", "house_t2", "house_t3"]) ASSETS[k] = { src: K("house_k"), pivotX: 0.5, own: true };
+  for (const id of ["pine", "pine2"]) ASSETS[id] = { ...ASSETS[id], src: K("pine_k"), pivotX: .5, dispH: 104 };
+  for (const k of Object.keys(FRAMES.tengu.meta)) ASSETS[`ten_${k}`] = { src: K("tengu_k"), pivotX: .5, facing: "right", wpp: 58 / 356 };
+}
+ASSETS.kage_bust ={ src: "assets/kage_bust.webp" };
 
 // Unit stats per single soldier. radius = collision radius in tiles.
 const UNITS = {
