@@ -23,7 +23,7 @@ async def main(glb, prefix, rots, norm=""):
         pg=await b.new_page(viewport={'width':800,'height':800})
         errs=[]; pg.on('pageerror', lambda e: errs.append(str(e))); pg.on('console', lambda m: errs.append(m.text) if m.type=='error' else None)
         for rot in rots:
-            await pg.goto(f"http://localhost:8765/proto3d/toonbake.html?m={glb}&rot={rot}&size=800&norm={norm}")
+            await pg.goto(f"http://localhost:8765/proto3d/toonbake.html?m={glb}&rot={rot}&size=800&norm={norm}&ly={os.environ.get('LY','')}")
             await pg.wait_for_function("window.__done", timeout=60000)
             d=await pg.evaluate("window.__done")
             im=Image.open(io.BytesIO(base64.b64decode(d.split(',')[1]))).convert('RGBA')

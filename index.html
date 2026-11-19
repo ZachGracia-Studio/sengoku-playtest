@@ -646,6 +646,8 @@ if (S3D) for (const [pre, o] of Object.entries(U3D)) {
   for (const k of Object.keys(f.meta)) { const pose = k.startsWith("back") ? "back" : k.startsWith("side") || k === "attack" || k === "death" ? "side" : "front";
     ASSETS[`${pre}_${k}`] = { src: `assets/style/v2/u3d/${pre}_${pose}.webp`, pivotX: .5, facing: pose === "back" ? "right" : "left", wpp: o.h / (o.d || 395) }; }
 }
+if (S3D) for (const [k, f] of [["gh_drift_a", "front"], ["gh_drift_b", "front"], ["gh_attack", "side"], ["gh_death", "front"]])   // yūrei: one sculpt, the game bobs it
+  ASSETS[k] = { src: `assets/style/v2/u3d/gh_${f}.webp`, pivotX: .5, facing: "left", wpp: 44 / 527, floatY: 10 };
 if (S3D) for (const k of ["gsh_roar", "gsh_grab"]) ASSETS[k] = { src: "assets/style/v2/u3d/gsh_front.webp", pivotX: .5, facing: "left", wpp: 100 / 527 };
 // palisade pieces (straight pieces run up-right; the renderer mirrors them for the other axis)
 if (S3D) { for (const id of ["pal_wall_a", "pal_wall_b", "pal_corner"]) ASSETS[id] = { src: "assets/style/v2/b3d/wall_b.webp", pw: 46 };

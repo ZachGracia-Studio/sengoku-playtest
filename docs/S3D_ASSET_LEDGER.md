@@ -90,4 +90,4 @@ Kittl concepts (2048 or 832x1248 PNG) and Tripo task pages. Tripo: https://studi
 ## Waiting for Tripo credits (concepts ready)
 - Yūrei ghost, the most common enemy (picked B): `cmwo370zg000100iltkc75nan` (hunched, ragged hem, hitodama flame). Alt A (taller, no flame): `cmwo370aj000000ilic7xrsh5`.
 - Oni brute: `cmwnqhy06000300ilzdxfcc7w`.
-- Both still show old 2D art in the sculpted look. Model these first when credits refresh.
+- Yūrei: built in Blender as a first pass (`tools/bl_yurei.py` → `gh_front|side.webp`, baked with `LY=.45 CROPB=1`). Replace with a modelled version from concept B when credits refresh if it needs more finish. The brute still shows old 2D art.
