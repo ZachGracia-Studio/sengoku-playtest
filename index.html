@@ -629,10 +629,14 @@ if (STYLE_V2 && /[?&]kit=1\b/.test(location.search)) {
   for (const id of ["pine", "pine2"]) ASSETS[id] = { ...ASSETS[id], src: K("pine_k"), pivotX: .5, dispH: 104 };
   for (const k of Object.keys(FRAMES.tengu.meta)) ASSETS[`ten_${k}`] = { src: K("tengu_k"), pivotX: .5, facing: "right", wpp: 58 / 356 };
 }
+// ?s3d=1 (also &u3d=1): the sculpted-3D art direction. Units and buildings are baked from 3D figures at the game camera.
+const S3D = /[?&](u3d|s3d)=1\b/.test(location.search);
+const B3D = { house: ["house_t1", "house_t2", "house_t3"], keep1: ["keep_t1"], keep2: ["keep_t2"], keep3: ["keep_t3"], kura: ["farm_kura_t1", "farm_kura_t2", "farm_kura_t3"], smith: ["smith_t1", "smith_t2", "smith_t3"], lumber: ["lumber_t1", "lumber_t2", "lumber_t3"], tower: ["tower_t1", "tower_t2", "tower_t3"] };   // baked sprite -> building art ids (scaled to the footprint)
+if (S3D) for (const [id, arts] of Object.entries(B3D)) for (const a of arts) ASSETS[a] = { src: `assets/style/v2/b3d/${id}.webp`, pivotX: .5, own: true, b3d: 1 };
 // &u3d=1: units baked from simple sculpted 3D figures (toon-shaded, palette-snapped, ink outline) at the game camera.
 // front/side/back sprites share one 600x500 canvas: feet at the bottom edge, centred. h = world px per model height.
-const U3D = { spr: { h: 66 }, sam: { h: 66 }, arc: { h: 68 }, ten: { h: 66 } };
-if (/[?&]u3d=1\b/.test(location.search)) for (const [pre, o] of Object.entries(U3D)) {
+const U3D = { spr: { h: 52 }, sam: { h: 52 }, arc: { h: 54 }, ten: { h: 54 } };
+if (S3D) for (const [pre, o] of Object.entries(U3D)) {
   const f = Object.values(FRAMES).find(f => f.prefix === pre); if (!f) continue;
   for (const k of Object.keys(f.meta)) { const pose = k.startsWith("back") ? "back" : k.startsWith("side") || k === "attack" || k === "death" ? "side" : "front";
     ASSETS[`${pre}_${k}`] = { src: `assets/style/v2/u3d/${pre}_${pose}.webp`, pivotX: .5, facing: pose === "back" ? "right" : "left", wpp: o.h / 395 }; }
@@ -3239,7 +3243,7 @@ function makeVariants() {
   // iso buildings: one world-px-per-image-px per building so every tier/scaffold/ruin shares a scale
   for (const d of Object.values(BUILDINGS)) if (d.iso) {
     const wpp = (d.w + d.h) * TW / 2 * d.fit / IMG[d.art].width;
-    for (const id of new Set([d.art, d.scaffold, d.damaged, ...d.tiers.map(t => t.art)].filter(Boolean))) { if (id === d.sf) continue; const w2 = ASSETS[id].own ? (d.w + d.h) * TW / 2 * d.fit * ((MJB.fit || {})[d.art] || 1) / IMG[id].width : wpp; ASSETS[id].wpp = w2; ASSETS[id].dispH = IMG[id].height * w2; }
+    for (const id of new Set([d.art, d.scaffold, d.damaged, ...d.tiers.map(t => t.art)].filter(Boolean))) { if (id === d.sf) continue; const w2 = ASSETS[id].b3d ? (d.w + d.h) * TW / 2 * ASSETS[id].b3d / IMG[id].width : ASSETS[id].own ? (d.w + d.h) * TW / 2 * d.fit * ((MJB.fit || {})[d.art] || 1) / IMG[id].width : wpp; ASSETS[id].wpp = w2; ASSETS[id].dispH = IMG[id].height * w2; }
   }
 }
 

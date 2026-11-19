@@ -26,11 +26,13 @@ root.traverse(o => { if (o.isMesh) {
 } });
 // normalise: feet at y=0, height 1
 const box = new THREE.Box3().setFromObject(root), h = box.max.y - box.min.y, c = box.getCenter(new THREE.Vector3());
-root.position.sub(new THREE.Vector3(c.x, box.min.y, c.z)); const wrap = new THREE.Group(); wrap.add(root); wrap.scale.setScalar(1 / h);
+root.position.sub(new THREE.Vector3(c.x, box.min.y, c.z)); const wrap = new THREE.Group(); wrap.add(root);
+const FP = q.get("norm") === "fp", fpw = Math.max(box.max.x - box.min.x, box.max.z - box.min.z);
+wrap.scale.setScalar(FP ? 1 / fpw : 1 / h);
 wrap.rotation.y = +(q.get("rot") || 0) * Math.PI / 180;
 scene.add(wrap);
-const cam = new THREE.OrthographicCamera(-.62, .62, .62, -.62, .01, 50);
-const D = 10; cam.position.set(Math.sin(AZ) * Math.cos(EL) * D, .5 + Math.sin(EL) * D, Math.cos(AZ) * Math.cos(EL) * D); cam.lookAt(0, .5, 0);
+const F = FP ? 1.05 : .62, LY = FP ? .55 : .5; const cam = new THREE.OrthographicCamera(-F, F, F, -F, .01, 50);
+const D = 10; cam.position.set(Math.sin(AZ) * Math.cos(EL) * D, LY + Math.sin(EL) * D, Math.cos(AZ) * Math.cos(EL) * D); cam.lookAt(0, LY, 0);
 r.render(scene, cam);
 window.__done = r.domElement.toDataURL("image/png");
 </script></body></html>
