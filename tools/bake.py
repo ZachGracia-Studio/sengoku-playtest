@@ -29,7 +29,7 @@ async def main(glb, prefix, rots, norm=""):
             im=Image.open(io.BytesIO(base64.b64decode(d.split(',')[1]))).convert('RGBA')
             im.save(f"{prefix}_raw_{rot}.png"); s=snap(im)
             if norm=="fp": s=s.crop(s.getbbox())
-            else: s=s.crop((0,0,800,667))
+            else: s=s.crop((0,0,800,max(667,(s.getbbox() or (0,0,0,667))[3]) if os.environ.get('CROPB') else 667))
             s.save(f"{prefix}_{rot}.png"); print(rot, s.size, s.getbbox())
         print(errs[:3]); await b.close()
 import os
