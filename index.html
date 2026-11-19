@@ -441,8 +441,9 @@ const FRAMES = {
   kage: { prefix: "kg", wpp: 72 / 290, meta: { side_idle: [0.705, "right"], side_walk_a: [0.629, "right"], side_walk_b: [0.526, "right"], attack: [0.371, "right"], death: [0.5, "right"], front_idle: [0.693, "right"], front_walk_a: [0.506, "right"], front_walk_b: [0.559, "right"], back_idle: [0.677, "right"], back_walk_a: [0.418, "right"], back_walk_b: [0.421, "right"], idle_var1: [0.705, "right"], idle_var2: [0.645, "right"] } },
   ninja: { prefix: "nin", wpp: 60 / 258, meta: { side_idle: [0.649, "right"], side_walk_a: [0.59, "right"], side_walk_b: [0.547, "right"], attack: [0.355, "right"], death: [0.5, "right"], front_idle: [0.623, "left"], front_walk_a: [0.667, "left"], front_walk_b: [0.636, "left"], back_idle: [0.722, "right"], back_walk_a: [0.332, "right"], back_walk_b: [0.42, "right"], idle_var1: [0.539, "right"], idle_var2: [0.656, "right"] } },
 };
+FRAMES.lantern = { ...FRAMES.kappa, prefix: "lan" }; FRAMES.umbrella = { ...FRAMES.kitsune, prefix: "kas" };   // chōchin-obake, kasa-obake
 for (const [, f] of Object.entries(FRAMES)) for (const [k, [pivotX, facing]] of Object.entries(f.meta))
-  ASSETS[`${f.prefix}_${k}`] = { src: `assets/${f.prefix}_${k}.webp`, pivotX, facing, wpp: f.wpp };
+  ASSETS[`${f.prefix}_${k}`] = { src: `assets/${{ lan: "kap", kas: "kit" }[f.prefix] || f.prefix}_${k}.webp`, pivotX, facing, wpp: f.wpp };
 const ANIM = {};
 for (const [type, f] of Object.entries(FRAMES)) {
   const P = k => `${f.prefix}_${k}`;
@@ -639,13 +640,11 @@ const P3D = { pine: ["pine", 118], pine2: ["pine2", 112], sc_bamboo: ["bamboo", 
 if (S3D) for (const [id, [f, h]] of Object.entries(P3D)) ASSETS[id] = { ...(ASSETS[id] || {}), src: `assets/style/v2/b3d/${f}.webp`, pivotX: .5, dispH: h, fit: undefined, dispW: undefined };
 // &u3d=1: units baked from simple sculpted 3D figures (toon-shaded, palette-snapped, ink outline) at the game camera.
 // front/side/back sprites share one 600x500 canvas: feet at the bottom edge, centred. h = world px per model height.
-const U3D = { spr: { h: 52 }, sam: { h: 52 }, arc: { h: 54 }, ten: { h: 50 }, mnk: { h: 54, d: 527 }, tep: { h: 52, d: 527 }, nin: { h: 40, d: 527 }, oni: { h: 62, d: 527 }, kit: { h: 40, d: 527 }, kap: { h: 34, d: 527 }, kg: { h: 56, d: 527 }, gsh: { h: 100, d: 527 } };
-const YK_ALT = /[?&]yk=alt\b/.test(location.search);   // alt night yokai: paper lantern for kappa, umbrella for kitsune
-const U3D_SRC = YK_ALT ? { kap: "lan", kit: "kas" } : {};
+const U3D = { spr: { h: 52 }, sam: { h: 52 }, arc: { h: 54 }, ten: { h: 50 }, mnk: { h: 54, d: 527 }, tep: { h: 52, d: 527 }, nin: { h: 40, d: 527 }, oni: { h: 62, d: 527 }, kit: { h: 40, d: 527 }, kap: { h: 34, d: 527 }, kg: { h: 56, d: 527 }, gsh: { h: 100, d: 527 }, lan: { h: 36, d: 527 }, kas: { h: 42, d: 527 } };
 if (S3D) for (const [pre, o] of Object.entries(U3D)) {
   const f = Object.values(FRAMES).find(f => f.prefix === pre); if (!f) continue;
   for (const k of Object.keys(f.meta)) { const pose = k.startsWith("back") ? "back" : k.startsWith("side") || k === "attack" || k === "death" ? "side" : "front";
-    ASSETS[`${pre}_${k}`] = { src: `assets/style/v2/u3d/${U3D_SRC[pre] || pre}_${pose}.webp`, pivotX: .5, facing: pose === "back" ? "right" : "left", wpp: o.h / (o.d || 395) }; }
+    ASSETS[`${pre}_${k}`] = { src: `assets/style/v2/u3d/${pre}_${pose}.webp`, pivotX: .5, facing: pose === "back" ? "right" : "left", wpp: o.h / (o.d || 395) }; }
 }
 if (S3D) for (const k of ["gsh_roar", "gsh_grab"]) ASSETS[k] = { src: "assets/style/v2/u3d/gsh_front.webp", pivotX: .5, facing: "left", wpp: 100 / 527 };
 // palisade pieces (straight pieces run up-right; the renderer mirrors them for the other axis)
@@ -675,9 +674,11 @@ const UNITS = {
   gunner:  { name: "Teppō gunner", jp: "Teppō ashigaru", gloss: "matchlock gunner", team: "P", trainedAt: "smith", art: ["tep_side_idle"], cost: 90, pop: 1, hp: 70, dmg: 42, range: 4.6, speed: 1.2, cd: 2.8,
              ranged: true, bonus: { oni: 1.3 }, radius: .26, aggro: 5, blurb: "Matchlock (1543). Slow to reload, hits like a hammer." },
   kappa:   { name: "Kappa", team: "E", kind: "oni", art: ["kap_side_idle"], hp: 85, dmg: 11, range: .8, speed: 1.35, cd: 1.0, radius: .28, aggro: 2.6 },
+  lantern: { name: "Chōchin-obake", gloss: "lantern ghost", team: "E", kind: "ghost", art: ["lan_side_idle"], hp: 50, dmg: 8, range: .7, speed: 1.1, cd: .9, radius: .26, aggro: 2.4 },
+  umbrella: { name: "Kasa-obake", gloss: "umbrella ghost", team: "E", kind: "oni", art: ["kas_side_idle"], hp: 75, dmg: 13, range: .75, speed: 1.9, cd: .9, radius: .26, aggro: 2.8 },
   tengu:   { name: "Tengu", team: "E", kind: "oni", art: ["ten_side_idle"], hp: 230, dmg: 26, range: 1.0, speed: 1.15, cd: 1.3, radius: .3, aggro: 3 },
   kitsune: { name: "Kitsune-bi", team: "E", kind: "ghost", art: ["kit_side_idle"], hp: 70, dmg: 12, range: .7, speed: 2.1, cd: .8, radius: .28, aggro: 3 },
-  gashadokuro: { name: "Gashadokuro", team: "E", kind: "oni", boss: true, art: ["gsh_side_idle"], hp: 1700, dmg: 55, range: 1.4, speed: .5, cd: 2.2, radius: .62, aggro: 3.5 },
+  gashadokuro: { name: S3D ? "Shuten-dōji" : "Gashadokuro", team: "E", kind: "oni", boss: true, art: ["gsh_side_idle"], hp: 1700, dmg: 55, range: 1.4, speed: .5, cd: 2.2, radius: .62, aggro: 3.5 },
   ghost:   { name: "Yūrei", team: "E", kind: "ghost", art: ["gh_drift_a"], hp: 40, dmg: 6, range: .6, speed: 1.6, cd: .8, radius: .24, aggro: 2.2 },
   oni:     { name: "Oni", team: "E", kind: "oni", art: ["oni_side_idle"], hp: 160, dmg: 22, range: .95, speed: .8, cd: 1.6, radius: .34, aggro: 2.5 },
   brute:   { name: "Oni brute", team: "E", kind: "oni", art: ["brute_side_idle"], hp: 300, dmg: 35, range: 1.0, speed: .65, cd: 1.9, radius: .36, aggro: 2.5 },
@@ -761,8 +762,8 @@ const CHAPTERS = [
     edges: [0, 0, 1, 1, 2, 3], startUnits: [["spear", 10.2, 13.6], ["spear", 11.4, 13.9], ["archer", 13.7, 11.0]],
     river: { x: 18, bridge: 10 }, scatter: { seed: 11, clusters: 10 }, setpieces: 4,
     props: [["bale", 8, 9]],
-    waves: [ [["ghost", 4], ["oni", 1]], [["ghost", 5], ["oni", 1], ["kappa", 2]], [["ghost", 6], ["oni", 2], ["kappa", 2], ["brute", 1]],
-             [["ghost", 6], ["oni", 3], ["kappa", 2], ["kitsune", 1], ["brute", 1]], [["ghost", 7], ["oni", 3], ["kappa", 2], ["kitsune", 2], ["brute", 2]] ] },
+    waves: [ [["ghost", 3], ["lantern", 2], ["oni", 1]], [["ghost", 4], ["lantern", 2], ["oni", 1], ["kappa", 2]], [["ghost", 5], ["oni", 2], ["kappa", 2], ["umbrella", 2], ["brute", 1]],
+             [["ghost", 5], ["oni", 3], ["kappa", 2], ["umbrella", 2], ["kitsune", 1], ["brute", 1]], [["ghost", 6], ["lantern", 2], ["oni", 3], ["kappa", 2], ["umbrella", 2], ["kitsune", 2], ["brute", 2]] ] },
   { id: "pass", name: "The Mountain Pass", objective: "HOLD THE PASS", weather: ["wind", "mist", "wind", "rain"],
     labels: [["STONE PASS", 4.5, 11.5], ["PINE GAP", 11.5, 4.5], ["KEEP", 13.5, 20.3], ["HIGH FOREST", 4, 3]],
     sub: "7 nights · hold the gaps", map: 26, keepAt: [12, 17], nights: 7, dayLength: 60, startRice: 260,
@@ -770,7 +771,7 @@ const CHAPTERS = [
     edges: [0, 1], edgeMax: 14, startUnits: [["spear", 11.5, 16.4], ["spear", 13.0, 16.2], ["archer", 14.6, 16.3], ["archer", 11.4, 20.6]],
     ridge: { sum: 15, gaps: [4, 11] }, scatter: { seed: 23, clusters: 12 }, setpieces: 4,
     props: [["bale", 10, 19]],
-    waves: [ [["ghost", 5], ["oni", 1]], [["ghost", 6], ["oni", 2]], [["ghost", 7], ["oni", 2], ["tengu", 1]], [["ghost", 8], ["oni", 3], ["brute", 1]],
+    waves: [ [["ghost", 4], ["lantern", 2], ["oni", 1]], [["ghost", 5], ["lantern", 2], ["oni", 2]], [["ghost", 6], ["umbrella", 2], ["oni", 2], ["tengu", 1]], [["ghost", 7], ["umbrella", 2], ["oni", 3], ["brute", 1]],
              [["ghost", 9], ["oni", 3], ["tengu", 1], ["brute", 2]], [["ghost", 9], ["oni", 4], ["tengu", 2], ["kitsune", 2], ["brute", 2]], [["ghost", 10], ["oni", 4], ["tengu", 2], ["kitsune", 2], ["gashadokuro", 1]] ] },
 ];
 // Test ground (menu) — for checking new unit art: shelter and keep pre-upgraded, rice plentiful, no day clock.
@@ -785,7 +786,7 @@ const SANDBOX = { id: "sandbox", name: "Test ground", objective: "TEST GROUND", 
                ["cavalry", 4.5, 4.7, { patrol: [[4.5, 4.7], [9.3, 4.9], [8.6, 1.5], [4.6, 1.4]] }],
                ["spear", 9.6, 8.6], ["spear", 9.3, 9.4], ["spear", 10.2, 9.0], ["monk", 8.1, 11.3], ["monk", 8.8, 11.9]],
   props: [["pine", 1, 1], ["pine2", 12, 1], ["rocks", 1, 12], ["pine2", 12, 12]],
-  waves: [[["oni", 1], ["kappa", 1], ["kitsune", 1], ["ghost", 2]], [["tengu", 1], ["oni", 1], ["kitsune", 2], ["ghost", 3]], [["gashadokuro", 1], ["kappa", 2], ["ghost", 3]]] };
+  waves: [[["oni", 1], ["kappa", 1], ["kitsune", 1], ["lantern", 1], ["umbrella", 1], ["ghost", 2]], [["tengu", 1], ["oni", 1], ["kitsune", 2], ["ghost", 3]], [["gashadokuro", 1], ["kappa", 2], ["ghost", 3]]] };
 // seasons turn with each day: spring, summer, autumn (harvest), winter (lean, paddies frozen)
 const SEASONS = [
   { name: "Spring", k: "春", rice: 1.0, grow: 1.0 }, { name: "Summer", k: "夏", rice: 1.1, grow: 1.35 },
@@ -1431,9 +1432,11 @@ const advisor = {
     if (S.units.filter(u => u.type === "archer").length >= 3 && !has("range")) this.say("Our archers are many. An archery range would make every one of them deadlier.", { key: "range", face: "neutral" });
     for (const u of S.units) if (u.team === "E" && !u.dead) {
       if (u.type === "kappa") this.say("Kappa from the river! They are quick but frail. Spearmen hold them well.", { key: "kappa", urgent: true });
+      if (u.type === "lantern") this.say("Paper lanterns walking on their own. Lantern ghosts are weak, but they come in numbers: archers and monks.", { key: "lantern", urgent: true });
+      if (u.type === "umbrella") this.say("Umbrella ghosts, hopping fast on one leg. Spearmen pin them before they slip through.", { key: "umbrella", urgent: true });
       if (u.type === "tengu") this.say("A tengu descends from the peaks. Strong and stubborn: meet it with samurai and monks.", { key: "tengu", urgent: true });
       if (u.type === "kitsune") this.say("Fox-fire in the dark. Kitsune are spirits: archers and monks cut them down.", { key: "kitsune", urgent: true });
-      if (u.type === "gashadokuro") this.say("Gashadokuro! A giant of the restless dead. Hit it from every side and do not let it reach the keep!", { key: "boss", urgent: true });
+      if (u.type === "gashadokuro") this.say(S3D ? "Shuten-dōji, king of the oni! Hit him from every side and do not let him reach the keep!" : "Gashadokuro! A giant of the restless dead. Hit it from every side and do not let it reach the keep!", { key: "boss", urgent: true });
     }
   },
 };
@@ -4826,7 +4829,7 @@ function syncBuildings() {
   for (const [id, e] of R3.fmap) if (!fseen.has(id)) { R3.world.remove(e.m); R3.fmap.delete(id); }
 }
 const FIG_OF = { spear: "spear", archer: "archer", samurai: "samurai", monk: "monk", ninja: "ninja", gunner: "gunner", kage: "kage", cavalry: "cavalry",
-  farmer: "farmer", cutter: "cutter", builder: "builder", oni: "oni", brute: "brute", kappa: "kappa", tengu: "tengu", ghost: "ghost", kitsune: "kitsune", gashadokuro: "gashadokuro" };
+  farmer: "farmer", cutter: "cutter", builder: "builder", oni: "oni", brute: "brute", kappa: "kappa", lantern: "kappa", umbrella: "kitsune", tengu: "tengu", ghost: "ghost", kitsune: "kitsune", gashadokuro: "gashadokuro" };
 const FIG_SCALE = .6;   // a soldier stands about 1.35 tiles tall (≈ the 2D sprites)
 function pxToTile(px, py) { return [(px / (TW / 2) + py / (TH / 2)) / 2 * .5, (py / (TH / 2) - px / (TW / 2)) / 2 * .5]; }
 function syncUnits(pose) {
@@ -4902,7 +4905,7 @@ R3.bars = function () {
     }
   }
 };
-function unitHeight(u) { const big = { oni: 1.9, brute: 2.3, gashadokuro: 4.2, tengu: 1.75, kappa: 1.1, kitsune: .85, cavalry: 2.1 }[u.type]; return (big || 1.45) * FIG_SCALE / .6; }
+function unitHeight(u) { const big = { oni: 1.9, brute: 2.3, gashadokuro: 4.2, tengu: 1.75, kappa: 1.1, lantern: 1.0, umbrella: 1.0, kitsune: .85, cavalry: 2.1 }[u.type]; return (big || 1.45) * FIG_SCALE / .6; }
 R3.hit = function (u) {   // tap target for a unit: a circle over the middle of the 3D figure
   const k = HEIGHT_PX(), p = iso(u.x, u.y), s = toScreen(p.X, p.Y), h = unitHeight(u) * k;
   return { x: s.x, y: s.y - h * .5, r: Math.max(26, h * .55 * (u.size > 1 ? 1.35 : 1)) };

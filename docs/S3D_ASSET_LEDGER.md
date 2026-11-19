@@ -84,5 +84,5 @@ Kittl concepts (2048 or 832x1248 PNG) and Tripo task pages. Tripo: https://studi
 - Per-tier building sprites in `assets/style/v2/b3d/<id>_t2|t3.webp`; `B3D_TIERS` in index.html lists which tiers have their own sculpt (missing tiers fall back to the tier below: tower t2, stable t2).
 - New tier sculpts: house t2/t3, kura t2/t3, lumber t2/t3, smith t2/t3, tower t3, temple t2/t3, range t2/t3, stable t3, hideout t2/t3, dojo t2/t3 (rotation 90).
 - Shuten-doji replaces the Gashadokuro boss sprite in s3d (`gsh_*`, h 100). Baked with `CROPB=1` so the wide stance keeps its feet.
-- Paper-lantern and umbrella yokai (`lan_*`, `kas_*`) are wired as alternates for kappa / kitsune behind `&yk=alt`.
+- Chōchin-obake (lantern, `lan_*`) and Kasa-obake (umbrella, `kas_*`) are their own night enemies alongside kappa and kitsune (lantern: weak spirit fodder from night 1; umbrella: fast hopper, mid nights). The 2D styles borrow kappa / kitsune art for them.
 - Tripo task ids are in /home/claude/kittl/tripo_tasks.json (round 3 entries at the end). Tripo credits are now spent (10 left).
