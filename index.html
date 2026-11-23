@@ -5025,11 +5025,11 @@ function setup3d() {
   R3.rt = new THREE.WebGLRenderTarget(1, 1, { depthBuffer: true }); R3.rt.depthTexture = new THREE.DepthTexture(1, 1); R3.rt.depthTexture.type = THREE.UnsignedIntType;
   R3.quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
     uniforms: { tColor: { value: R3.rt.texture }, tDepth: { value: R3.rt.depthTexture }, invPV: { value: new THREE.Matrix4() }, res: { value: new THREE.Vector2() },
-      time: { value: 0 }, night: { value: 0 }, MAPSZ: { value: 16 }, near: { value: 1 }, far: { value: 160 }, winter: { value: 0 }, raw: { value: /[?&]raw/.test(location.search) ? 1 : 0 }, sculpt: { value: GLB3 ? 1 : 0 } },
+      time: { value: 0 }, night: { value: 0 }, MAPSZ: { value: 16 }, near: { value: 1 }, far: { value: 160 }, winter: { value: 0 }, raw: { value: /[?&]raw/.test(location.search) ? 1 : 0 }, sculpt: { value: GLB3 ? 1 : 0 }, ink: { value: /[?&]ink=1\b/.test(location.search) ? 1 : 0 } },
     vertexShader: "varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0., 1.); }",
     fragmentShader: `
       precision highp float; varying vec2 vUv;
-      uniform sampler2D tColor, tDepth; uniform mat4 invPV; uniform vec2 res; uniform float time, night, MAPSZ, near, far, winter, raw, sculpt;
+      uniform sampler2D tColor, tDepth; uniform mat4 invPV; uniform vec2 res; uniform float time, night, MAPSZ, near, far, winter, raw, sculpt, ink;
       const vec3 PAPER = vec3(.929,.894,.827), WASH = vec3(.62,.6,.57), WASH2 = vec3(.43,.42,.41), INK = vec3(.106,.106,.122), VERM = vec3(.784,.216,.176), COOL = vec3(.122,.149,.2);
       float h21(vec2 p){ p = fract(p*vec2(123.34,456.21)); p += dot(p,p+45.32); return fract(p.x*p.y); }
       float vn(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.-2.*f); return mix(mix(h21(i),h21(i+vec2(1,0)),f.x), mix(h21(i+vec2(0,1)),h21(i+vec2(1,1)),f.x), f.y); }
@@ -5050,7 +5050,7 @@ function setup3d() {
         vec3 real = mix(inkTone(c, wq*1.3), INK, edge*.9);
         if (sculpt > .5) {   // sculpted look: keep the models' own colour, ink only the silhouettes and creases; beyond the map is the gold cloud fog (drawn by the overlay)
           float e2 = smoothstep(.10, .30, max(abs(dl+dr-2.*d0), abs(du+dd-2.*d0)));
-          vec3 sc = mix(c * 1.04, INK, e2 * .85);
+          vec3 sc = mix(c * 1.04, INK, e2 * .85 * ink);   // outline off by default; ?ink=1 brings it back
           float bk = smoothstep(.2, 1.2, max(max(-wq.x, -wq.y), max(wq.x - MAPSZ, wq.y - MAPSZ)));
           sc = mix(sc, vec3(.85,.78,.6), bk);
           sc = mix(sc, mix(sc, vec3(.97,.97,.99), .35), winter);
