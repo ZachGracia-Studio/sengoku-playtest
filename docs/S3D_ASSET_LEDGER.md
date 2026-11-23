@@ -102,3 +102,9 @@ Kittl concepts (2048 or 832x1248 PNG) and Tripo task pages. Tripo: https://studi
 - Kumi (3) shows one veteran, tai (9) one captain. Sculpts: spear_k/t, arc_k/t, sam_k/t (Kittl concepts referenced from the base units, clan tomoe crest instead of the plain red circle). Other unit types use the base sculpt + back banner + scale until they get their own.
 - Base ring: red = kumi, gold = tai. Combine plays: trio runs together and folds, dust ring, the formation pops up and its banner unfurls.
 - Ink outline is off in GLB mode (`?ink=1` to compare).
+
+## 23 Nov — rigging test, board fill-ins, bundled build
+- Rig test: base spearman retopologized to 8k tris in Tripo (35 cr), auto-rigged humanoid (Mixamo skeleton, 20 cr), five free preset clips exported in place in one GLB: idle, walk, slash, hit_to_body_01, fall → `assets/3d/spear_rig.glb` (textures shrunk with `tools/glb_shrink_tex.py`). Game: AnimationMixer per figure, crossfades by state; formations still use the static evolved sculpts. Viewer: `proto3d/rigview/`.
+- Known issue: the spear is skinned to the hand and pivots (points down in idle/walk). Fix options: segment the weapon in Tripo and attach it to the hand bone in code, or re-pose before rigging.
+- Regenerated and wired: pond (sp_pond), young paddy (fields), watermill (river bank), torii (before shrines), hay rack (village).
+- `tools/build_playable.py` builds the hosted playable with the models packed into 3 base64 bundles + index (was 93 files).

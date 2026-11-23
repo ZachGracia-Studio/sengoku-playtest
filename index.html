@@ -4804,8 +4804,11 @@ function buildWorld() {
     const [kx, ky] = CH.keepAt, kc = [kx + 1, ky + 1], put = (n, x, z, a) => { const D = G3.dress[n], m = D && g3clone(n, D[0] * (.85 + hash(x, z * 5) * .3), D[1] === "h"); if (!m) return;
       m.position.set(x + .5 + (hash(x * 9, z) - .5) * .3, 0, z + .5 + (hash(x, z * 9) - .5) * .3); m.rotation.y = a; W.add(m); R3.decor.push({ m, tx: x, ty: z }); };
     if (CH.river) { const bz = CH.river.bridge + 5 < N ? CH.river.bridge + 5 : CH.river.bridge - 4, bt = g3clone("boat", .95);
-      if (bt) { bt.position.set(CH.river.x + .5, -.08, bz + .5); bt.rotation.y = Math.PI / 2; W.add(bt); } }
-    const village = ["well", "cart", "firewood", "jizo", "stall", "stone_lantern"]; let vi = 0;
+      if (bt) { bt.position.set(CH.river.x + .5, -.08, bz + .5); bt.rotation.y = Math.PI / 2; W.add(bt); }
+      for (const dz of [-4, -5, 5, 6]) { const z = CH.river.bridge + dz, x = CH.river.x + 1;   // a watermill on the bank, where there's room
+        if (z < 1 || z >= N - 1 || S.occ[z][x] || S.occ[z][x + 1] || S.occ[z + 1] && S.occ[z + 1][x]) continue;
+        const wm = g3clone("watermill", 1.8); if (wm) { wm.position.set(x + .9, 0, z + .5); wm.rotation.y = -Math.PI / 2; W.add(wm); R3.decor.push({ m: wm, tx: x, ty: z }); } break; } }
+    const village = ["well", "cart", "hay", "firewood", "jizo", "stall", "stone_lantern"]; let vi = 0;
     for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) {
       if (S.occ[z][x] || (CH.river && Math.abs(z - CH.river.bridge - .5) < 1.6 && Math.abs(x - CH.river.x) < 2)) continue;
       const h = hash(x * 7 + 3, z * 11 + 1), dk = Math.hypot(x + .5 - kc[0], z + .5 - kc[1]), a = hash(x, z) * Math.PI * 2;
@@ -4823,7 +4826,9 @@ function buildWorld() {
   if (K.parts.length) W.add(new THREE.Mesh(K.geo(), mat));
   for (const pr of S.props) if (!pr.invisible && pr.art) {
     const P = G3.ready && G3.prop[pr.art], gm = P && g3clone(P[0], P[2] === "h" ? P[3] : P[1] * Math.min(pr.w, pr.h), P[2] === "h");
-    if (gm) { gm.position.set(pr.tx + pr.w / 2, 0, pr.ty + pr.h / 2); gm.rotation.y = (pr.id * 2.39) % (Math.PI * 2); W.add(gm); continue; }
+    if (gm) { gm.position.set(pr.tx + pr.w / 2, 0, pr.ty + pr.h / 2); gm.rotation.y = pr.art === "lm_shrine" ? Math.PI / 4 : (pr.id * 2.39) % (Math.PI * 2); W.add(gm);
+      if (pr.art === "lm_shrine") { const t = g3clone("torii", 1.25, true); if (t) { t.position.set(pr.tx + pr.w + .15, 0, pr.ty + pr.h + .15); t.rotation.y = Math.PI / 4; W.add(t); } }   // a gate before the shrine
+      continue; }
     const m = new THREE.Mesh(propKit(pr.art, pr.w, pr.h, pr.id), mat); m.position.set(pr.tx + pr.w / 2, 0, pr.ty + pr.h / 2); W.add(m); }
   // (grass and reed decor is left to the painted ground for now: tufts this small turn into specks under the ink pass)
 }
@@ -4886,23 +4891,35 @@ const G3 = { ready: false, src: {}, grad: null,
     bale: ["hay", .9], lm_shrine: ["hokora", 1.4], lm_ruin: ["ruin_wall", 1.8], lm_lantern: ["stone_lantern", 1.5], lm_farm: ["veg_field", 1.9],
     sp_stream: ["waterfall", 2.6], sp_outcrop: ["cliff_block", 2.6], sp_hill: ["hill", 2.8], sp_bamboo: ["bamboo", 1.2, "h", 2.4], sp_boulders: ["bank_rocks", 2.4], sp_pond: ["pond", 2.6] },
   field: ["paddy_young", "paddy_young", "paddy_young", "paddy_ripe"],
+  rig: { spear: "spear_rig" },   // rigged + animated sculpts (idle, walk, slash, hit_to_body_01, fall); others keep the bob
   // board dressing: [model, size in tiles, "h" = size is a height]
   dress: { boat: [.95], reeds: [.8], bush: [.7], stump: [.45], log: [.8], cherry: [2.0, "h"], bare_tree: [1.9, "h"], stone_lantern: [.9, "h"], well: [.95], cart: [1.1], firewood: [.75], jizo: [.6, "h"], stall: [1.3], scarecrow: [1.1, "h"] } };
 async function loadGLB3() {
   const { GLTFLoader } = await import("./vendor/jsm/loaders/GLTFLoader.js"); const L = new GLTFLoader();
-  const names = new Set([...Object.values(G3.bld).flat(), ...Object.values(G3.fig), ...Object.values(G3.prop).map(p => p[0]), ...G3.field, ...Object.keys(G3.dress), "bridge", ...["spear", "arc", "sam"].flatMap(n => [n + "_k", n + "_t"])]);
+  G3.skel = await import("./vendor/jsm/utils/SkeletonUtils.js");
+  const names = new Set([...Object.values(G3.bld).flat(), ...Object.values(G3.fig), ...Object.values(G3.prop).map(p => p[0]), ...G3.field, ...Object.keys(G3.dress), "bridge", ...Object.values(G3.rig), ...["spear", "arc", "sam"].flatMap(n => [n + "_k", n + "_t"])]);
   G3.grad = new THREE.DataTexture(new Uint8Array([110, 185, 255]), 3, 1, THREE.RedFormat); G3.grad.minFilter = G3.grad.magFilter = THREE.NearestFilter; G3.grad.needsUpdate = true;
   await Promise.all([...names].map(n => L.loadAsync(`assets/3d/${n}.glb`).then(g => {
     g.scene.traverse(o => { if (o.isMesh) { const m = o.material; o.material = new THREE.MeshToonMaterial({ map: m.map || null, color: m.map ? 0xffffff : (m.color || 0xcccccc), gradientMap: G3.grad }); if (o.material.map) o.material.map.colorSpace = THREE.NoColorSpace; } });
     const box = new THREE.Box3().setFromObject(g.scene), c = box.getCenter(new THREE.Vector3());
     g.scene.position.set(-c.x, -box.min.y, -c.z);   // centred on its footprint, standing on the ground
-    G3.src[n] = { root: g.scene, fp: Math.max(box.max.x - box.min.x, box.max.z - box.min.z), h: box.max.y - box.min.y };
+    G3.src[n] = { root: g.scene, fp: Math.max(box.max.x - box.min.x, box.max.z - box.min.z), h: box.max.y - box.min.y, anims: g.animations || [] };
   }).catch(() => {})));   // a missing model just keeps the kit
   G3.ready = true; R3.S = null;   // rebuild the world with the models in
 }
 function g3clone(n, size, byH) {   // a model scaled to a footprint (or a height) in tiles
   const s = G3.src[n]; if (!s) return null;
-  const inner = s.root.clone(true), g = new THREE.Group(); g.add(inner); g.scale.setScalar(size / (byH ? s.h : s.fp)); return g;
+  const inner = s.anims.length && G3.skel ? G3.skel.clone(s.root) : s.root.clone(true), g = new THREE.Group(); g.add(inner); g.scale.setScalar(size / (byH ? s.h : s.fp));
+  if (s.anims.length) {   // a rigged figure: its own mixer, one action per clip
+    const mix = new THREE.AnimationMixer(inner), act = {};
+    for (const c of s.anims) act[c.name] = mix.clipAction(c);
+    for (const k of ["slash", "hit_to_body_01", "fall"]) if (act[k]) { act[k].setLoop(THREE.LoopOnce); act[k].clampWhenFinished = true; }
+    g.userData.mix = mix; g.userData.act = act; }
+  return g;
+}
+function rigPlay(D, name, fade = .15, speed = 1) {   // crossfade a rigged figure to a clip
+  const a = D.act && D.act[name]; if (!a || D.clip === name && a.isRunning()) return;
+  const prev = D.clip && D.act[D.clip]; a.reset(); a.timeScale = speed; a.play(); if (prev && prev !== a) prev.crossFadeTo(a, fade, false); D.clip = name;
 }
 function glbBuilding(b) {
   if (!G3.ready || !G3.bld[b.type]) return null;
@@ -4922,12 +4939,14 @@ function sashimono(h, gold) {
 function glbFigure(type, size = 1) {
   if (!G3.ready) return null;
   const E = EVO[size], base = G3.fig[type], evo = E && base && G3.src[base + E.sfx] ? base + E.sfx : null, H = (G3.figH[type] || 1.45) / FIG_SCALE;
-  const body = (evo && g3clone(evo, H * E.s * 1.05, true)) || (base && g3clone(base, H * (E ? E.s : 1), true)); if (!body) return null;
+  const rig = !E && G3.rig[type] && G3.src[G3.rig[type]] ? G3.rig[type] : null;
+  const body = (rig && g3clone(rig, H, true)) || (evo && g3clone(evo, H * E.s * 1.05, true)) || (base && g3clone(base, H * (E ? E.s : 1), true)); if (!body) return null;
   const root = new THREE.Group(); root.add(body); let flag = null;
   if (E && !evo && !G3.figH[type]) {   // interim evolution: a back banner on the base sculpt
     const b = sashimono(H * E.s * .95, size === 9); b.position.set(0, H * E.s * .28, -.2); root.add(b); flag = b.userData.flag; }
   if (E) { const ring = new THREE.Mesh(new THREE.RingGeometry(.34, .42, 24), new THREE.MeshBasicMaterial({ color: E.ring, transparent: true, opacity: .8 })); ring.rotation.x = -Math.PI / 2; ring.position.y = .02 / FIG_SCALE; ring.scale.setScalar(1 / FIG_SCALE * (size === 9 ? 1.25 : 1)); root.add(ring); }
-  root.userData = { body, legs: [], armR: null, armL: null, weaponArm: null, scale: 1, float: type === "ghost" || type === "lantern", glb: true, flag };
+  root.userData = { body, legs: [], armR: null, armL: null, weaponArm: null, scale: 1, float: type === "ghost" || type === "lantern", glb: true, flag, mix: body.userData.mix, act: body.userData.act };
+  if (root.userData.mix) rigPlay(root.userData, "idle", 0);
   return root;
 }
 function puff3(x, z, t0) {   // a ring of paper-white dust where a formation forms
@@ -4973,7 +4992,10 @@ function syncUnits(pose) {
       if (D.armR) D.armR.rotation.x = (D.armR === D.weaponArm ? -s * .12 : -s * .45) + idle;
       if (D.armL) D.armL.rotation.x = (D.armL === D.weaponArm ? s * .12 : s * .45) - idle;
       if (atk && D.weaponArm) D.weaponArm.rotation.x = -1.1 + (S.t - u.atkT) * 3;   // thrust forward, recover
-      D.body.position.y = (e.mv ? Math.abs(Math.cos(ph)) * .06 : 0) + (D.float ? .25 + Math.sin(ph * .5) * .08 : 0);
+      if (D.mix) {   // rigged: the clips do the acting
+        const hitNow = S.t - (u.hitT ?? -9) < .35;
+        rigPlay(D, atk && tg ? "slash" : hitNow && D.clip !== "slash" ? "hit_to_body_01" : e.mv ? "walk" : (D.clip === "slash" || D.clip === "hit_to_body_01") && D.act[D.clip].isRunning() ? D.clip : "idle", .12, atk ? 2.2 : 1);
+      } else D.body.position.y = (e.mv ? Math.abs(Math.cos(ph)) * .06 : 0) + (D.float ? .25 + Math.sin(ph * .5) * .08 : 0);
       const hit = S.t - (u.hitT ?? -9) < .1;   // impact frame: the figure flashes paper-white for an instant
       if (hit !== !!D.flash) { D.flash = hit; f.traverse(o => { if (o.isMesh) { if (hit) { o.userData.m0 ||= o.material; o.material = R3.flashMat; } else o.material = o.userData.m0 || figMat(); } }); }
       D.body.position.x = S.t - (u.hitT ?? -9) < .15 ? Math.sin(S.t * 90) * .04 : 0;
@@ -4981,12 +5003,15 @@ function syncUnits(pose) {
   }
   for (const [id, e] of R3.umap) if (!seen.has(id)) {   // the fallen topple and sink into the ground
     R3.umap.delete(id); e.dieT = S.t; e.merge = S.merges && S.merges[id]; if (e.merge) delete S.merges[id]; const pool = e.g.children.find(o => o.geometry === R3.poolGeo); if (pool) e.g.remove(pool); R3.dying.push(e); }
-  for (let i = R3.dying.length - 1; i >= 0; i--) { const e = R3.dying[i], a = (S.t - e.dieT) / (e.merge ? .4 : .9);
+  for (let i = R3.dying.length - 1; i >= 0; i--) { const e = R3.dying[i], a = (S.t - e.dieT) / (e.merge ? .4 : e.figs.some(f => f.userData.mix) ? 1.5 : .9);
     if (a >= 1 || a < 0) { R3.world.remove(e.g); R3.dying.splice(i, 1); continue; }
     if (e.merge) { const q = a * a; e.g.position.set(e.px + (e.merge.x - e.px) * q, Math.sin(a * Math.PI) * .25, e.py + (e.merge.y - e.py) * q);   // the three run together and fold into one
       e.g.scale.setScalar(1 - q * .75); e.g.rotation.y = q * 2.5; continue; }
-    for (const f of e.figs) { f.rotation.z = Math.min(1, a * 3) * 1.45; f.position.y = -Math.max(0, a - .45) * 1.2; } }
+    for (const f of e.figs) { if (f.userData.mix) { rigPlay(f.userData, "fall", .08, 2.4); f.position.y = -Math.max(0, a - .7) * 1.6; } else { f.rotation.z = Math.min(1, a * 3) * 1.45; f.position.y = -Math.max(0, a - .45) * 1.2; } } }
   tickPuffs();
+  const now = performance.now() / 1000, dt = Math.min(.1, now - (R3.mixT || now)); R3.mixT = now;   // advance every rigged figure, alive or falling
+  for (const e of R3.umap.values()) for (const f of e.figs) if (f.userData.mix) f.userData.mix.update(running && !paused ? dt : 0);
+  for (const e of R3.dying) for (const f of e.figs) if (f.userData.mix) f.userData.mix.update(dt);
 }
 
 /* ---------- camera: the 2D isometric projection, reproduced ---------- */

@@ -42,3 +42,8 @@ arc_k 1eb83202-06c5-4840-8f22-67b2ea474fb0
 arc_t f7801636-315f-4d95-98ef-cd165f72130f
 sam_k 4fdbdbbc-f00c-41a7-b701-cb2356fb7593
 sam_t b185b6be-383e-4fad-bfb9-a8ce7f7d40ca
+pond b5ff78e8-c773-4825-bbab-cfaeb146a6f5
+paddy_young d087bf55-242b-40f5-b29e-a346d204acab
+watermill 77bee0d6-253f-4cd7-83ec-b9625733ee28
+torii 5b04a423-cc6c-4e83-91f3-821b9d976f45
+hay 23724417-8d16-406b-88a9-9a7c62b99312
