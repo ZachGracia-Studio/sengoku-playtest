@@ -4891,7 +4891,8 @@ const G3 = { ready: false, src: {}, grad: null,
     bale: ["hay", .9], lm_shrine: ["hokora", 1.4], lm_ruin: ["ruin_wall", 1.8], lm_lantern: ["stone_lantern", 1.5], lm_farm: ["veg_field", 1.9],
     sp_stream: ["waterfall", 2.6], sp_outcrop: ["cliff_block", 2.6], sp_hill: ["hill", 2.8], sp_bamboo: ["bamboo", 1.2, "h", 2.4], sp_boulders: ["bank_rocks", 2.4], sp_pond: ["pond", 2.6] },
   field: ["paddy_young", "paddy_young", "paddy_young", "paddy_ripe"],
-  rig: { spear: "spear_rig" },   // rigged + animated sculpts (idle, walk, slash, hit_to_body_01, fall); others keep the bob
+  rig: { spear: "spear_rig", archer: "arc_rig", samurai: "sam_rig", monk: "mnk_rig", ninja: "nin_rig" },
+  atk: { spear: "slash", archer: "shoot" },   // attack clip per unit type (default slash)   // rigged + animated sculpts (idle, walk, slash, hit_to_body_01, fall); others keep the bob
   // board dressing: [model, size in tiles, "h" = size is a height]
   dress: { boat: [.95], reeds: [.8], bush: [.7], stump: [.45], log: [.8], cherry: [2.0, "h"], bare_tree: [1.9, "h"], stone_lantern: [.9, "h"], well: [.95], cart: [1.1], firewood: [.75], jizo: [.6, "h"], stall: [1.3], scarecrow: [1.1, "h"] } };
 async function loadGLB3() {
@@ -4913,19 +4914,20 @@ function g3clone(n, size, byH) {   // a model scaled to a footprint (or a height
   if (s.anims.length) {   // a rigged figure: its own mixer, one action per clip
     const mix = new THREE.AnimationMixer(inner), act = {};
     for (const c of s.anims) act[c.name] = mix.clipAction(c);
-    for (const k of ["slash", "hit_to_body_01", "fall"]) if (act[k]) { act[k].setLoop(THREE.LoopOnce); act[k].clampWhenFinished = true; }
+    for (const k of Object.keys(act)) if (!/idle|walk|run/.test(k)) { act[k].setLoop(THREE.LoopOnce); act[k].clampWhenFinished = true; }
     g.userData.mix = mix; g.userData.act = act;
-    let wpn = null, hand = null; inner.traverse(o => { if (/^weapon/.test(o.name) && o.isMesh) wpn = o; if (/RightHand$/.test(o.name) && o.isBone) hand = o; });
+    let wpn = null, hand = null; inner.traverse(o => { if (/^weapon/.test(o.name) && o.isMesh) wpn = o; });
+    const side = wpn && /_L$/.test(wpn.name) ? "Left" : "Right"; inner.traverse(o => { if (o.isBone && new RegExp(side + "Hand$").test(o.name)) hand = o; });
     if (wpn && hand) {   // a held weapon rides the hand's position but keeps its own angle (preset motions turn the wrist as if empty)
       inner.updateMatrixWorld(true); const hp = wpn.parent.worldToLocal(hand.getWorldPosition(new THREE.Vector3()));
       g.userData.wpn = { mesh: wpn, hand, off: wpn.position.clone().sub(hp), tilt: 0 }; } }
   return g;
 }
-const _wv = new THREE.Vector3();
+let _wv = null;
 function carryWeapon(D, dt) {   // hand position + an upright spear, levelled forward on the thrust
-  const W = D.body.userData.wpn; if (!W) return;
+  const W = D.body.userData.wpn; if (!W) return; _wv ||= new THREE.Vector3();
   W.mesh.parent.worldToLocal(W.hand.getWorldPosition(_wv)); W.mesh.position.copy(_wv).add(W.off);
-  const want = D.clip === "slash" ? 1.35 : D.clip === "walk" ? .12 : D.clip === "hit_to_body_01" ? -.25 : D.clip === "fall" ? 1.4 : 0;
+  const want = D.clip === D.atk ? (W.mesh.name.includes("bow") ? 0 : 1.35) : D.clip === "walk" ? .12 : D.clip === "hit_to_body_01" ? -.25 : D.clip === "fall" ? 1.4 : 0;
   W.tilt += (want - W.tilt) * Math.min(1, dt * 12); W.mesh.rotation.set(W.tilt, 0, 0);
 }
 function rigPlay(D, name, fade = .15, speed = 1) {   // crossfade a rigged figure to a clip
@@ -4957,7 +4959,7 @@ function glbFigure(type, size = 1) {
     const b = sashimono(H * E.s * .95, size === 9); b.position.set(0, H * E.s * .28, -.2); root.add(b); flag = b.userData.flag; }
   if (E) { const ring = new THREE.Mesh(new THREE.RingGeometry(.34, .42, 24), new THREE.MeshBasicMaterial({ color: E.ring, transparent: true, opacity: .8 })); ring.rotation.x = -Math.PI / 2; ring.position.y = .02 / FIG_SCALE; ring.scale.setScalar(1 / FIG_SCALE * (size === 9 ? 1.25 : 1)); root.add(ring); }
   root.userData = { body, legs: [], armR: null, armL: null, weaponArm: null, scale: 1, float: type === "ghost" || type === "lantern", glb: true, flag, mix: body.userData.mix, act: body.userData.act };
-  if (root.userData.mix) rigPlay(root.userData, "idle", 0);
+  if (root.userData.mix) { root.userData.atk = G3.atk[type] || "slash"; rigPlay(root.userData, "idle", 0); }
   return root;
 }
 function puff3(x, z, t0) {   // a ring of paper-white dust where a formation forms
@@ -5005,7 +5007,7 @@ function syncUnits(pose) {
       if (atk && D.weaponArm) D.weaponArm.rotation.x = -1.1 + (S.t - u.atkT) * 3;   // thrust forward, recover
       if (D.mix) {   // rigged: the clips do the acting
         const hitNow = S.t - (u.hitT ?? -9) < .35;
-        rigPlay(D, atk && tg ? "slash" : hitNow && D.clip !== "slash" ? "hit_to_body_01" : e.mv ? "walk" : (D.clip === "slash" || D.clip === "hit_to_body_01") && D.act[D.clip].isRunning() ? D.clip : "idle", .12, atk ? 2.2 : 1);
+        rigPlay(D, atk && tg ? D.atk : hitNow && D.clip !== D.atk ? "hit_to_body_01" : e.mv ? "walk" : (D.clip === D.atk || D.clip === "hit_to_body_01") && D.act[D.clip] && D.act[D.clip].isRunning() ? D.clip : "idle", .12, atk ? 2.2 : 1);
       } else D.body.position.y = (e.mv ? Math.abs(Math.cos(ph)) * .06 : 0) + (D.float ? .25 + Math.sin(ph * .5) * .08 : 0);
       const hit = S.t - (u.hitT ?? -9) < .1;   // impact frame: the figure flashes paper-white for an instant
       if (hit !== !!D.flash) { D.flash = hit; f.traverse(o => { if (o.isMesh) { if (hit) { o.userData.m0 ||= o.material; o.material = R3.flashMat; } else o.material = o.userData.m0 || figMat(); } }); }

@@ -10,6 +10,11 @@ Q = int(sys.argv[4]) if len(sys.argv) > 4 else 82
 b = open(src, "rb").read()
 jl = struct.unpack("<I", b[12:16])[0]; j = json.loads(b[20:20 + jl])
 bin0 = 20 + jl + 8; binl = struct.unpack("<I", b[20 + jl:24 + jl])[0]; BIN = b[bin0:bin0 + binl]
+import os
+for a in j.get("animations", []):   # RENAME="prefix=new,..." renames long auto-named clips
+    for pair in filter(None, os.environ.get("RENAME", "").split(",")):
+        old, new = pair.split("=", 1)
+        if a.get("name", "").startswith(old): a["name"] = new
 img_views = {im["bufferView"]: i for i, im in enumerate(j.get("images", [])) if "bufferView" in im}
 out = bytearray()
 for vi, v in enumerate(j["bufferViews"]):
