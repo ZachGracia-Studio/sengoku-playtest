@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<script type="importmap">{"imports":{"three":"./vendor/three.module.js"}}</script>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <meta name="theme-color" content="#EDE4D3">
 <title>Sengoku</title>
@@ -3553,7 +3554,7 @@ function render() {
   const o = toScreen(-(MAP * TW / 2 + TERR.pad), -TERR.pad);
   const tw = terrain.width / TERR.scale * cam.z, th = terrain.height / TERR.scale * cam.z;
   const OVL = r3on();   // 3D mode: the world is drawn in WebGL underneath; this canvas becomes the transparent overlay
-  if (OVL) ctx.clearRect(0, 0, vw, vh); else {
+  if (OVL) { ctx.clearRect(0, 0, vw, vh); if (GLB3 && FOG_ON) drawGoldFog(na); } else {
   ctx.fillStyle = IS_BOARD_C ? (TEST_SUB === "c1" ? PAL_C1.ground : PAL_C0.ground) : "#EDE4D3"; ctx.fillRect(0, 0, vw, vh);
   if (na > 0) { ctx.globalAlpha = na; ctx.fillStyle = "#1F2633"; ctx.fillRect(0, 0, vw, vh); ctx.globalAlpha = 1; }
   ctx.drawImage(terrain, o.x, o.y, tw, th);
@@ -4779,6 +4780,15 @@ function buildWorld() {
     c.setHex(K3.ground); const k = .97 + hash(Math.floor(x * 2), Math.floor(z * 2)) * .05; col.push(c.r * k, c.g * k, c.b * k); }
   G.setAttribute("color", new THREE.Float32BufferAttribute(col, 3)); G.computeVertexNormals();
   W.add(new THREE.Mesh(G, mat));
+  if (GLB3) {   // the board: chunky turf tiles, faintly varied, like the sculpted dioramas
+    const tg = new THREE.BoxGeometry(.985, .24, .985); tg.translate(0, -.12, 0);
+    const tm = new THREE.MeshToonMaterial({ color: 0xffffff, gradientMap: G3.grad || null }), inst = new THREE.InstancedMesh(tg, tm, N * N), M = new THREE.Matrix4(), cc = new THREE.Color();
+    const greens = [0x6a8458, 0x6f895c, 0x678155, 0x6c865a];
+    let i = 0; for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) {
+      const wet = CH.river && x === CH.river.x && z !== CH.river.bridge + 1;
+      M.makeTranslation(x + .5, wet ? -.1 : .006 + hash(x, z) * .01, z + .5); inst.setMatrixAt(i, M);
+      cc.setHex(wet ? 0x4a6788 : greens[Math.floor(hash(x * 3, z * 7) * greens.length)]); inst.setColorAt(i, cc); i++; }
+    W.add(inst); }
   const K = new Kit();
   if (CH.river) { const rx = CH.river.x + .5, br = CH.river.bridge;
     K.box(rx, -.04, br / 2, 1.3, .05, br, K3.water).box(rx, -.04, (br + 2 + N) / 2, 1.3, .05, N - br - 2, K3.water);
@@ -4791,6 +4801,8 @@ function buildWorld() {
     for (let t = 0; t < 3; t++) K.cone(x, h + .2 + t * .35, z, .5 - t * .12, .6, K3.pine, 6); }
   if (K.parts.length) W.add(new THREE.Mesh(K.geo(), mat));
   for (const pr of S.props) if (!pr.invisible && pr.art) {
+    const P = G3.ready && G3.prop[pr.art], gm = P && g3clone(P[0], P[2] === "h" ? P[3] : P[1] * Math.min(pr.w, pr.h), P[2] === "h");
+    if (gm) { gm.position.set(pr.tx + pr.w / 2, 0, pr.ty + pr.h / 2); gm.rotation.y = (pr.id * 2.39) % (Math.PI * 2); W.add(gm); continue; }
     const m = new THREE.Mesh(propKit(pr.art, pr.w, pr.h, pr.id), mat); m.position.set(pr.tx + pr.w / 2, 0, pr.ty + pr.h / 2); W.add(m); }
   // (grass and reed decor is left to the painted ground for now: tufts this small turn into specks under the ink pass)
 }
@@ -4808,8 +4820,8 @@ function syncBuildings() {
     if (!e || e.key !== key) {
       if (e) { R3.world.remove(e.g); e.g.traverse(o => o.geometry && o.geometry.dispose()); }
       const g = new THREE.Group(); g.position.set(b.tx + b.w / 2, 0, b.ty + b.h / 2);
-      if (f < 1) { g.add(new THREE.Mesh(scaffoldKit(b, f), R3.kitMat)); const inner = new THREE.Mesh(buildingKit(b), R3.kitMat); inner.scale.y = Math.max(.15, f); g.add(inner); }
-      else { const geo = buildingKit(b); if (dmg) char(geo, b, dmg); g.add(new THREE.Mesh(geo, R3.kitMat));
+      if (f < 1) { g.add(new THREE.Mesh(scaffoldKit(b, f), R3.kitMat)); const inner = glbBuilding(b) || new THREE.Mesh(buildingKit(b), R3.kitMat); inner.scale.y *= Math.max(.15, f); g.add(inner); }
+      else { const gm = glbBuilding(b); if (gm) g.add(gm); else { const geo = buildingKit(b); if (dmg) char(geo, b, dmg); g.add(new THREE.Mesh(geo, R3.kitMat)); }
         if (dmg) { const K = new Kit(); for (let i = 0; i < 3 + dmg * 3; i++) { const a = b.id * 1.7 + i * 2.39, r = Math.min(b.w, b.h) * .45;
           K.rock(Math.cos(a) * r, 0, Math.sin(a) * r, .07 + (i % 3) * .04, i % 2 ? K3.ink : K3.wood, a); K.box(Math.cos(a + 1) * r * .8, 0, Math.sin(a + 1) * r * .8, .45, .04, .06, K3.ink, 1, a); }
           g.add(new THREE.Mesh(K.geo(), R3.kitMat)); } }
@@ -4824,6 +4836,7 @@ function syncBuildings() {
   for (const b of S.buildings) for (const fl of b.fields || []) {
     const id = `${fl.x},${fl.y}`, stage = fl.stage || 0; fseen.add(id); let e = R3.fmap.get(id);
     if (!e || e.stage !== stage) { if (e) R3.world.remove(e.m);
+      const gm = G3.ready && g3clone(G3.field[Math.min(3, stage)], 1); if (gm) { gm.rotation.y = Math.PI / 2; gm.position.set(fl.x + .5, 0, fl.y + .5); R3.world.add(gm); R3.fmap.set(id, e = { m: gm, stage }); continue; }
       const K = new Kit().box(0, 0, 0, .96, .05, .96, K3.ink).box(0, .01, 0, .86, .05, .86, stage >= 3 ? K3.thatch : K3.water);
       for (let i = 0; i < 4 && stage > 0; i++) for (let j = 0; j < 4; j++) K.box(-.3 + i * .2, .05, -.3 + j * .2, .05, .08 + stage * .07, .05, stage >= 3 ? K3.thatch : K3.pine);
       const m = new THREE.Mesh(K.geo(), R3.kitMat); m.position.set(fl.x + .5, 0, fl.y + .5); R3.world.add(m); R3.fmap.set(id, e = { m, stage }); }
@@ -4833,6 +4846,49 @@ function syncBuildings() {
 const FIG_OF = { spear: "spear", archer: "archer", samurai: "samurai", monk: "monk", ninja: "ninja", gunner: "gunner", kage: "kage", cavalry: "cavalry",
   farmer: "farmer", cutter: "cutter", builder: "builder", oni: "oni", brute: "brute", kappa: "kappa", lantern: "kappa", umbrella: "kitsune", tengu: "tengu", ghost: "ghost", kitsune: "kitsune", gashadokuro: "gashadokuro" };
 const FIG_SCALE = .6;   // a soldier stands about 1.35 tiles tall (≈ the 2D sprites)
+/* ---------- sculpted models (GLB): the locked art direction, drawn live in 3D ----------
+   ?r=3d&glb=1 swaps the procedural kit for the sculpted models in assets/3d/. Anything without a model yet falls back to the kit. */
+const GLB3 = USE3D && /[?&]glb=1\b/.test(location.search);
+const G3 = { ready: false, src: {}, grad: null,
+  bld: { keep: ["keep", "keep2", "keep3"], dojo: ["dojo", "dojo_t2", "dojo_t3"], granary: ["kura", "kura_t2", "kura_t3"], tower: ["tower", "tower", "tower_t3"],
+    stable: ["stable", "stable", "stable_t3"], range: ["range", "range_t2", "range_t3"], temple: ["temple", "temple_t2", "temple_t3"], hideout: ["hideout", "hideout_t2", "hideout_t3"],
+    lumber: ["lumber", "lumber_t2", "lumber_t3"], smith: ["smith", "smith_t2", "smith_t3"], house: ["house", "house_t2", "house_t3"] },
+  rot: { lumber: 0, dojo: Math.PI },   // tier-1 models whose door faces another way; everything else turns a quarter
+  fig: { spear: "spear", archer: "arc", samurai: "sam", monk: "mnk", ninja: "nin", gunner: "gun", kage: "kg", cavalry: "cav", farmer: "wk", cutter: "wk", builder: "wk",
+    oni: "oni", brute: "brute", kappa: "kap", lantern: "lan", umbrella: "kas", tengu: "ten", ghost: "gh", kitsune: "kit", gashadokuro: "shuten" },
+  figH: { oni: 1.9, brute: 2.3, gashadokuro: 3.2, tengu: 1.75, kappa: 1.05, lantern: 1.0, umbrella: 1.15, kitsune: .9, cavalry: 2.0, ghost: 1.35 },
+  prop: { pine: ["pine", 1.0, "h", 2.1], pine2: ["cedar", 1.0, "h", 2.3], sc_maple: ["maple", 1.0, "h", 1.9], sc_bamboo: ["bamboo", 1.0, "h", 2.0], rocks: ["rocks", 1.0], sc_rocks: ["bank_rocks", 1.0],
+    bale: ["hay", .9], lm_shrine: ["hokora", 1.4], lm_ruin: ["ruin_wall", 1.8], lm_lantern: ["stone_lantern", 1.5], lm_farm: ["veg_field", 1.9],
+    sp_stream: ["waterfall", 2.6], sp_outcrop: ["cliff_block", 2.6], sp_hill: ["hill", 2.8], sp_bamboo: ["bamboo", 1.2, "h", 2.4], sp_boulders: ["bank_rocks", 2.4], sp_pond: ["pond", 2.6] },
+  field: ["paddy_young", "paddy_young", "paddy_young", "paddy_ripe"] };
+async function loadGLB3() {
+  const { GLTFLoader } = await import("./vendor/jsm/loaders/GLTFLoader.js"); const L = new GLTFLoader();
+  const names = new Set([...Object.values(G3.bld).flat(), ...Object.values(G3.fig), ...Object.values(G3.prop).map(p => p[0]), ...G3.field, "bridge"]);
+  G3.grad = new THREE.DataTexture(new Uint8Array([110, 185, 255]), 3, 1, THREE.RedFormat); G3.grad.minFilter = G3.grad.magFilter = THREE.NearestFilter; G3.grad.needsUpdate = true;
+  await Promise.all([...names].map(n => L.loadAsync(`assets/3d/${n}.glb`).then(g => {
+    g.scene.traverse(o => { if (o.isMesh) { const m = o.material; o.material = new THREE.MeshToonMaterial({ map: m.map || null, color: m.map ? 0xffffff : (m.color || 0xcccccc), gradientMap: G3.grad }); if (o.material.map) o.material.map.colorSpace = THREE.NoColorSpace; } });
+    const box = new THREE.Box3().setFromObject(g.scene), c = box.getCenter(new THREE.Vector3());
+    g.scene.position.set(-c.x, -box.min.y, -c.z);   // centred on its footprint, standing on the ground
+    G3.src[n] = { root: g.scene, fp: Math.max(box.max.x - box.min.x, box.max.z - box.min.z), h: box.max.y - box.min.y };
+  }).catch(() => {})));   // a missing model just keeps the kit
+  G3.ready = true; R3.S = null;   // rebuild the world with the models in
+}
+function g3clone(n, size, byH) {   // a model scaled to a footprint (or a height) in tiles
+  const s = G3.src[n]; if (!s) return null;
+  const inner = s.root.clone(true), g = new THREE.Group(); g.add(inner); g.scale.setScalar(size / (byH ? s.h : s.fp)); return g;
+}
+function glbBuilding(b) {
+  if (!G3.ready || !G3.bld[b.type]) return null;
+  const n = G3.bld[b.type][b.tier || 0], g = g3clone(n, Math.min(b.w, b.h) * 1.02); if (!g) return null;
+  g.rotation.y = (b.tier || 0) === 0 && G3.rot[b.type] !== undefined ? G3.rot[b.type] : Math.PI / 2; return g;
+}
+function glbFigure(type) {
+  if (!G3.ready) return null;
+  const n = G3.fig[type], body = n && g3clone(n, (G3.figH[type] || 1.45) / FIG_SCALE, true); if (!body) return null;
+  const root = new THREE.Group(); root.add(body);
+  root.userData = { body, legs: [], armR: null, armL: null, weaponArm: null, scale: 1, float: type === "ghost" || type === "lantern", glb: true };
+  return root;
+}
 function pxToTile(px, py) { return [(px / (TW / 2) + py / (TH / 2)) / 2 * .5, (py / (TH / 2) - px / (TW / 2)) / 2 * .5]; }
 function syncUnits(pose) {
   const seen = new Set();
@@ -4841,7 +4897,7 @@ function syncUnits(pose) {
     let e = R3.umap.get(u.id);
     if (!e) {
       const g = new THREE.Group(), n = (SIZES[u.size || 1] || SIZES[1]).figs, offs = (SIZES[u.size || 1] || SIZES[1]).offs, figs = [];
-      for (let i = 0; i < n; i++) { const f = figure(FIG_OF[u.type] || "spear"), [ox, oz] = pxToTile(offs[i][0], offs[i][1]);
+      for (let i = 0; i < n; i++) { const f = glbFigure(u.type) || figure(FIG_OF[u.type] || "spear"), [ox, oz] = pxToTile(offs[i][0], offs[i][1]);
         f.position.set(ox, 0, oz); f.scale.setScalar(FIG_SCALE * f.userData.scale); f.userData.ph = i * 1.7; g.add(f); figs.push(f); }
       const pool = new THREE.Mesh(R3.poolGeo, R3.poolMat); pool.rotation.x = -Math.PI / 2; pool.position.y = .015; pool.scale.setScalar(.6 + (n - 1) * .25); g.add(pool);
       R3.world.add(g); e = { g, figs, px: u.x, py: u.y, yaw: u.team === "E" ? -Math.PI * .75 : Math.PI / 4, phase: 0, mv: 0 }; R3.umap.set(u.id, e);
@@ -4864,7 +4920,7 @@ function syncUnits(pose) {
       if (atk && D.weaponArm) D.weaponArm.rotation.x = -1.1 + (S.t - u.atkT) * 3;   // thrust forward, recover
       D.body.position.y = (e.mv ? Math.abs(Math.cos(ph)) * .06 : 0) + (D.float ? .25 + Math.sin(ph * .5) * .08 : 0);
       const hit = S.t - (u.hitT ?? -9) < .1;   // impact frame: the figure flashes paper-white for an instant
-      if (hit !== !!D.flash) { D.flash = hit; f.traverse(o => { if (o.isMesh) o.material = hit ? R3.flashMat : figMat(); }); }
+      if (hit !== !!D.flash) { D.flash = hit; f.traverse(o => { if (o.isMesh) { if (hit) { o.userData.m0 ||= o.material; o.material = R3.flashMat; } else o.material = o.userData.m0 || figMat(); } }); }
       D.body.position.x = S.t - (u.hitT ?? -9) < .15 ? Math.sin(S.t * 90) * .04 : 0;
     }
   }
@@ -4925,7 +4981,7 @@ R3.pickBuilding = function (sx, sy) {   // tap a building anywhere on its 3D sha
 async function init3d() {
   if (!USE3D || R3.loading) return; R3.loading = true;
   try { THREE = await import("./vendor/three.module.js"); } catch (e) { console.error("3D renderer could not load; staying in 2D", e); return; }
-  try { setup3d(); } catch (e) { console.warn("3D renderer unavailable on this device; staying in 2D", e); const c = document.getElementById("c3d"); if (c) c.remove(); R3.ready = false; }
+  try { setup3d(); if (GLB3) loadGLB3().catch(e => console.warn("sculpted models unavailable; using the kit", e)); } catch (e) { console.warn("3D renderer unavailable on this device; staying in 2D", e); const c = document.getElementById("c3d"); if (c) c.remove(); R3.ready = false; }
 }
 function setup3d() {
   THREE.ColorManagement.enabled = false;
@@ -4934,7 +4990,7 @@ function setup3d() {
   Object.assign(gl.domElement.style, { position: "fixed", inset: "0", width: "100vw", height: "100dvh", pointerEvents: "none" });
   gl.domElement.id = "c3d"; cv.parentNode.insertBefore(gl.domElement, cv); R3.gl = gl;
   R3.scene = new THREE.Scene(); R3.cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 160);
-  const sun = new THREE.DirectionalLight(0xffffff, 1.25 * Math.PI); sun.position.set(-20, 30, 6); R3.scene.add(sun); R3.scene.add(new THREE.AmbientLight(0xffffff, .62 * Math.PI));
+  const sun = new THREE.DirectionalLight(0xffffff, (GLB3 ? .62 : 1.25) * Math.PI); sun.position.set(-20, 30, 6); R3.scene.add(sun); R3.scene.add(new THREE.AmbientLight(0xffffff, (GLB3 ? .42 : .62) * Math.PI));
   R3.kitMat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
   R3.ghostMat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide, emissive: 0x8a857c });   // the underdrawing: everything lifted toward paper
   R3.flashMat = new THREE.MeshBasicMaterial({ color: 0xf4efe4 });   // the impact frame
@@ -4942,11 +4998,11 @@ function setup3d() {
   R3.rt = new THREE.WebGLRenderTarget(1, 1, { depthBuffer: true }); R3.rt.depthTexture = new THREE.DepthTexture(1, 1); R3.rt.depthTexture.type = THREE.UnsignedIntType;
   R3.quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
     uniforms: { tColor: { value: R3.rt.texture }, tDepth: { value: R3.rt.depthTexture }, invPV: { value: new THREE.Matrix4() }, res: { value: new THREE.Vector2() },
-      time: { value: 0 }, night: { value: 0 }, MAPSZ: { value: 16 }, near: { value: 1 }, far: { value: 160 }, winter: { value: 0 }, raw: { value: /[?&]raw/.test(location.search) ? 1 : 0 } },
+      time: { value: 0 }, night: { value: 0 }, MAPSZ: { value: 16 }, near: { value: 1 }, far: { value: 160 }, winter: { value: 0 }, raw: { value: /[?&]raw/.test(location.search) ? 1 : 0 }, sculpt: { value: GLB3 ? 1 : 0 } },
     vertexShader: "varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0., 1.); }",
     fragmentShader: `
       precision highp float; varying vec2 vUv;
-      uniform sampler2D tColor, tDepth; uniform mat4 invPV; uniform vec2 res; uniform float time, night, MAPSZ, near, far, winter, raw;
+      uniform sampler2D tColor, tDepth; uniform mat4 invPV; uniform vec2 res; uniform float time, night, MAPSZ, near, far, winter, raw, sculpt;
       const vec3 PAPER = vec3(.929,.894,.827), WASH = vec3(.62,.6,.57), WASH2 = vec3(.43,.42,.41), INK = vec3(.106,.106,.122), VERM = vec3(.784,.216,.176), COOL = vec3(.122,.149,.2);
       float h21(vec2 p){ p = fract(p*vec2(123.34,456.21)); p += dot(p,p+45.32); return fract(p.x*p.y); }
       float vn(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.-2.*f); return mix(mix(h21(i),h21(i+vec2(1,0)),f.x), mix(h21(i+vec2(0,1)),h21(i+vec2(1,1)),f.x), f.y); }
@@ -4965,6 +5021,14 @@ function setup3d() {
         float d0 = lin(d); float edge = smoothstep(.12, .35, max(abs(dl+dr-2.*d0), abs(du+dd-2.*d0))) + smoothstep(.12, .24, max(abs(cl-cr), abs(cu-cd)));   // creases, not slopes
         edge = clamp(edge, 0., 1.) * smoothstep(.2, .55, vn(gl_FragCoord.xy*.035)+.3);
         vec3 real = mix(inkTone(c, wq*1.3), INK, edge*.9);
+        if (sculpt > .5) {   // sculpted look: keep the models' own colour, ink only the silhouettes and creases; beyond the map is the gold cloud fog (drawn by the overlay)
+          float e2 = smoothstep(.10, .30, max(abs(dl+dr-2.*d0), abs(du+dd-2.*d0)));
+          vec3 sc = mix(c * 1.04, INK, e2 * .85);
+          float bk = smoothstep(.2, 1.2, max(max(-wq.x, -wq.y), max(wq.x - MAPSZ, wq.y - MAPSZ)));
+          sc = mix(sc, vec3(.85,.78,.6), bk);
+          sc = mix(sc, mix(sc, vec3(.97,.97,.99), .35), winter);
+          sc = mix(sc, sc * mix(vec3(1.), COOL*2.2, .7), night);
+          gl_FragColor = vec4(sc, 1.); return; }
         // beyond the map: the land is painted, not drawn
         float beyond = max(max(-wq.x, -wq.y), max(wq.x - MAPSZ, wq.y - MAPSZ)) + (fb(wq*.35)-.5)*2.2;
         float k = smoothstep(.2, 1.6, beyond);
