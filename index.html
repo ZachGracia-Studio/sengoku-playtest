@@ -4914,8 +4914,19 @@ function g3clone(n, size, byH) {   // a model scaled to a footprint (or a height
     const mix = new THREE.AnimationMixer(inner), act = {};
     for (const c of s.anims) act[c.name] = mix.clipAction(c);
     for (const k of ["slash", "hit_to_body_01", "fall"]) if (act[k]) { act[k].setLoop(THREE.LoopOnce); act[k].clampWhenFinished = true; }
-    g.userData.mix = mix; g.userData.act = act; }
+    g.userData.mix = mix; g.userData.act = act;
+    let wpn = null, hand = null; inner.traverse(o => { if (/^weapon/.test(o.name) && o.isMesh) wpn = o; if (/RightHand$/.test(o.name) && o.isBone) hand = o; });
+    if (wpn && hand) {   // a held weapon rides the hand's position but keeps its own angle (preset motions turn the wrist as if empty)
+      inner.updateMatrixWorld(true); const hp = wpn.parent.worldToLocal(hand.getWorldPosition(new THREE.Vector3()));
+      g.userData.wpn = { mesh: wpn, hand, off: wpn.position.clone().sub(hp), tilt: 0 }; } }
   return g;
+}
+const _wv = new THREE.Vector3();
+function carryWeapon(D, dt) {   // hand position + an upright spear, levelled forward on the thrust
+  const W = D.body.userData.wpn; if (!W) return;
+  W.mesh.parent.worldToLocal(W.hand.getWorldPosition(_wv)); W.mesh.position.copy(_wv).add(W.off);
+  const want = D.clip === "slash" ? 1.35 : D.clip === "walk" ? .12 : D.clip === "hit_to_body_01" ? -.25 : D.clip === "fall" ? 1.4 : 0;
+  W.tilt += (want - W.tilt) * Math.min(1, dt * 12); W.mesh.rotation.set(W.tilt, 0, 0);
 }
 function rigPlay(D, name, fade = .15, speed = 1) {   // crossfade a rigged figure to a clip
   const a = D.act && D.act[name]; if (!a || D.clip === name && a.isRunning()) return;
@@ -5010,8 +5021,8 @@ function syncUnits(pose) {
     for (const f of e.figs) { if (f.userData.mix) { rigPlay(f.userData, "fall", .08, 2.4); f.position.y = -Math.max(0, a - .7) * 1.6; } else { f.rotation.z = Math.min(1, a * 3) * 1.45; f.position.y = -Math.max(0, a - .45) * 1.2; } } }
   tickPuffs();
   const now = performance.now() / 1000, dt = Math.min(.1, now - (R3.mixT || now)); R3.mixT = now;   // advance every rigged figure, alive or falling
-  for (const e of R3.umap.values()) for (const f of e.figs) if (f.userData.mix) f.userData.mix.update(running && !paused ? dt : 0);
-  for (const e of R3.dying) for (const f of e.figs) if (f.userData.mix) f.userData.mix.update(dt);
+  for (const e of R3.umap.values()) for (const f of e.figs) if (f.userData.mix) { f.userData.mix.update(running && !paused ? dt : 0); carryWeapon(f.userData, dt); }
+  for (const e of R3.dying) for (const f of e.figs) if (f.userData.mix) { f.userData.mix.update(dt); carryWeapon(f.userData, dt); }
 }
 
 /* ---------- camera: the 2D isometric projection, reproduced ---------- */

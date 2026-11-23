@@ -14,7 +14,12 @@ new GLTFLoader().load("../../assets/3d/" + q.get("m"), g => {
   const b = new THREE.Box3().setFromObject(g.scene), h = b.max.y - b.min.y; g.scene.scale.setScalar(1.9 / h); g.scene.position.y = -b.min.y * 1.9 / h; scene.add(g.scene);
   const mix = new THREE.AnimationMixer(g.scene), clips = Object.fromEntries(g.animations.map(c => [c.name, c]));
   window.__clips = g.animations.map(c => [c.name, c.duration]);
-  window.__frame = (name, t) => { mix.stopAllAction(); const a = mix.clipAction(clips[name]); a.play(); mix.setTime(t); r.render(scene, cam); return r.domElement.toDataURL("image/png"); };
+  let wpn = null, hand = null; g.scene.traverse(o => { if (/^weapon/.test(o.name) && o.isMesh) wpn = o; if (/RightHand$/.test(o.name) && o.isBone) hand = o; });
+  let off = null; if (wpn && hand) { g.scene.updateMatrixWorld(true); off = wpn.position.clone().sub(wpn.parent.worldToLocal(hand.getWorldPosition(new THREE.Vector3()))); }
+  const tilt = { slash: 1.35, walk: .12, hit_to_body_01: -.25, fall: 1.4 };
+  window.__frame = (name, t) => { mix.stopAllAction(); const a = mix.clipAction(clips[name]); a.play(); mix.setTime(t);
+    if (off) { g.scene.updateMatrixWorld(true); wpn.position.copy(wpn.parent.worldToLocal(hand.getWorldPosition(new THREE.Vector3()))).add(off); wpn.rotation.set(tilt[name] || 0, 0, 0); }
+    r.render(scene, cam); return r.domElement.toDataURL("image/png"); };
   window.__still = () => { r.render(scene, cam); return r.domElement.toDataURL("image/png"); }; window.__ready = true;
 });
 </script></body></html>
