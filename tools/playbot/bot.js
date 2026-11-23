@@ -65,6 +65,7 @@
       if (s.phase !== B.lastPhase) { if (s.phase === "day") B.dayStart = s.t; B.lastPhase = s.phase; note(s.phase === "night" ? `NIGHT ${s.night} begins: army ${soldiers().length} units, pop ${G.popUsed()}/${G.popCap()}, rice ${Math.round(s.rice)}` : `dawn`); }
       if (s.t >= B.nextDecide) { B.nextDecide = s.t + 1; decide();
         B.log.push([+s.t.toFixed(1), s.phase === "night" ? "N" + s.night : "D" + s.day, Math.round(s.rice), Math.round(s.wood || 0), G.popUsed(), G.popCap(), soldiers().length, foes().length, Math.round(keep() ? keep().hp : 0)]); }
+      if ((s.stats.raids || 0) > (B.raids || 0)) { B.raids = s.stats.raids; note(`DAY RAID hits`); }
       if (s.stats.lost > B.lastLost) { note(`lost ${s.stats.lost - B.lastLost} soldier(s)`); B.lastLost = s.stats.lost; }
     }
     const s = S();

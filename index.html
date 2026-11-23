@@ -287,6 +287,7 @@ body.board-c #bottom { text-align: center; }
 .ucard .bnr { height: 18px; width: auto; vertical-align: -3px; margin-right: 5px; }
 .ucard .mix { display: block; font-size: 12px; margin-top: 2px; }
 .ucard .mix .bnr { height: 15px; margin: 0 2px 0 6px; }
+.btn small.early { font-size: 11px; margin-left: 4px; font-weight: 700; color: #f2c46b; letter-spacing: .02em; }
 </style>
 </head>
 <body>
@@ -761,22 +762,22 @@ const CHAPTERS = [
     waves: [[["ghost", 3]]] },
   { id: "valley", name: "The Valley Keep", objective: "HOLD THE VALLEY", weather: ["clear", "rain", "clear", "mist"],
     labels: [["KEEP", 11.5, 13.8], ["EAST BRIDGE", 18.6, 10.4], ["RIVER", 18.5, 3], ["WEST FIELDS", 4, 14], ["NORTH WOOD", 6, 3]],
-    sub: "5 nights", map: 24, keepAt: [10, 10], nights: 5, dayLength: 60, startRice: 200,
+    sub: "5 nights", map: 24, keepAt: [10, 10], nights: 5, dayLength: 45, startRice: 200,
     landmarks: [["lm_shrine", 3, 15], ["lm_farm", 13, 3], ["lm_ruin", 20, 4]],
     edges: [0, 0, 1, 1, 2, 3], startUnits: [["spear", 10.2, 13.6], ["spear", 11.4, 13.9], ["archer", 13.7, 11.0]],
     river: { x: 18, bridge: 10 }, scatter: { seed: 11, clusters: 10 }, setpieces: 4,
     props: [["bale", 8, 9]],
     waves: [ [["ghost", 3], ["lantern", 2], ["oni", 1]], [["ghost", 4], ["lantern", 2], ["oni", 1], ["kappa", 2]], [["ghost", 5], ["oni", 2], ["kappa", 2], ["umbrella", 2], ["brute", 1]],
-             [["ghost", 5], ["oni", 3], ["kappa", 2], ["umbrella", 2], ["kitsune", 1], ["brute", 1]], [["ghost", 6], ["lantern", 2], ["oni", 3], ["kappa", 2], ["umbrella", 2], ["kitsune", 2], ["brute", 2]] ] },
+             [["ghost", 5], ["oni", 3], ["kappa", 3], ["umbrella", 2], ["kitsune", 1], ["brute", 2]], [["ghost", 7], ["lantern", 2], ["oni", 4], ["kappa", 3], ["umbrella", 2], ["kitsune", 2], ["brute", 3]] ] },
   { id: "pass", name: "The Mountain Pass", objective: "HOLD THE PASS", weather: ["wind", "mist", "wind", "rain"],
     labels: [["STONE PASS", 4.5, 11.5], ["PINE GAP", 11.5, 4.5], ["KEEP", 13.5, 20.3], ["HIGH FOREST", 4, 3]],
-    sub: "7 nights · hold the gaps", map: 26, keepAt: [12, 17], nights: 7, dayLength: 60, startRice: 260,
+    sub: "7 nights · hold the gaps", map: 26, keepAt: [12, 17], nights: 7, dayLength: 45, startRice: 260,
     landmarks: [["lm_ruin", 4, 6], ["lm_shrine", 22, 22], ["lm_lantern", 19, 9]],
     edges: [0, 1], edgeMax: 14, startUnits: [["spear", 11.5, 16.4], ["spear", 13.0, 16.2], ["archer", 14.6, 16.3], ["archer", 11.4, 20.6]],
     ridge: { sum: 15, gaps: [4, 11] }, scatter: { seed: 23, clusters: 12 }, setpieces: 4,
-    props: [["bale", 10, 19]],
+    props: [["bale", 10, 19], ["pine", 19, 20, "grove"], ["pine2", 19, 21, "grove"], ["sc_bamboo", 18, 22, "grove"], ["pine", 17, 23, "grove"], ["pine2", 20, 18, "grove"], ["pine", 19, 16, "grove"], ["pine2", 7, 20, "grove"], ["pine", 7, 21, "grove"], ["sc_bamboo", 8, 22, "grove"], ["pine2", 9, 23, "grove"]],   // a home wood south of the keep: the pass is timber-poor otherwise
     waves: [ [["ghost", 4], ["lantern", 2], ["oni", 1]], [["ghost", 5], ["lantern", 2], ["oni", 2]], [["ghost", 6], ["umbrella", 2], ["oni", 2], ["tengu", 1]], [["ghost", 7], ["umbrella", 2], ["oni", 3], ["brute", 1]],
-             [["ghost", 9], ["oni", 3], ["tengu", 1], ["brute", 2]], [["ghost", 9], ["oni", 4], ["tengu", 2], ["kitsune", 2], ["brute", 2]], [["ghost", 10], ["oni", 4], ["tengu", 2], ["kitsune", 2], ["gashadokuro", 1]] ] },
+             [["ghost", 9], ["oni", 4], ["tengu", 2], ["brute", 2]], [["ghost", 10], ["oni", 5], ["tengu", 2], ["kitsune", 2], ["brute", 3]], [["ghost", 10], ["oni", 5], ["tengu", 3], ["kitsune", 2], ["brute", 2], ["gashadokuro", 1]] ] },
 ];
 // Test ground (menu) — for checking new unit art: shelter and keep pre-upgraded, rice plentiful, no day clock.
 const SANDBOX = { id: "sandbox", name: "Test ground", objective: "TEST GROUND", weather: ["clear", "rain", "wind", "mist"], labels: [["KEEP", 7.5, 9.7]], sub: "Units, buildings and effects check", map: 14, keepAt: [6, 6], nights: 99, dayLength: 0, startRice: 3000,
@@ -843,7 +844,7 @@ function newWorld(chapter, seed = 7) {
   S.decor = [];
   for (const [a, tx, ty] of [...chapter.props, ...scatterProps(chapter)]) {
     if (DECOR.includes(a)) { S.decor.push([a, tx, ty]); continue; }
-    if (S.occ[ty][tx]) continue; const p = { id: nextId++, art: a, tx, ty, w: 1, h: 1, prop: true }; S.props.push(p); S.occ[ty][tx] = p; }
+    if (S.occ[ty][tx]) continue; const p = { id: nextId++, art: a, tx, ty, w: 1, h: 1, prop: true, grove: chapter.props.some(q => q[0] === a && q[1] === tx && q[2] === ty && q[3] === "grove") }; S.props.push(p); S.occ[ty][tx] = p; }
   const wall = (tx, ty) => { if (tx >= 0 && ty >= 0 && tx < MAP && ty < MAP) S.occ[ty][tx] = { prop: true, invisible: true }; };
   if (chapter.ridge) for (let x = 0; x <= chapter.ridge.sum; x++) if (!chapter.ridge.gaps.includes(x)) wall(x, chapter.ridge.sum - x);
   if (chapter.river) for (let y = 0; y < MAP; y++) if (y !== chapter.river.bridge && y !== chapter.river.bridge + 1) wall(chapter.river.x, y);
@@ -1084,6 +1085,7 @@ function setupBoardCEntities() {
     if (LANDMARKS[p.art]) return true;
     if (TREES.has(p.art)) {
       const px = p.tx + 0.5 + (p.ox || 0), py = p.ty + 0.5 + (p.oy || 0);
+      if (p.grove) return true;   // a chapter's placed home wood is never thinned
       if (isNearBuildingWallOrRoad(px, py) || (treeIdx++ % 3 !== 0)) {
         if (S.occ[p.ty] && S.occ[p.ty][p.tx] === p) S.occ[p.ty][p.tx] = null;
         return false;
@@ -1194,7 +1196,21 @@ function addWorker(home) {
 }
 /* ---------- timber: woodcutters fell trees near their lumber camp and haul planks home ---------- */
 const TREES = new Set(["pine", "pine2", "sc_bamboo", "sc_maple", "sc_deadtree"]);
-const CUT = { chop: 3.2, load: 10, stock: 40, reach: 12 };
+const CUT = { chop: 3.2, load: 10, stock: 40, reach: 12, regrow: 70 };   // regrow: seconds of spring growth for a felled tree to stand again
+const TREE_GROW = { Spring: 1.4, Summer: 1, Autumn: .55, Winter: 0 };   // how fast saplings grow each season; winter sleeps
+function stepRegrow() {
+  if (!S.regrow || !S.regrow.length) return;
+  const g = TREE_GROW[season().name] ?? 1; if (!g) return;
+  for (const r of S.regrow) r.left -= DT * g;
+  S.regrow = S.regrow.filter(r => {
+    if (r.left > 0) return true;
+    if (S.occ[r.ty][r.tx] || S.units.some(u => !u.dead && Math.floor(u.x) === r.tx && Math.floor(u.y) === r.ty)) { r.left = 4; return true; }   // built over or stood on: wait
+    const p = { id: nextId++, art: r.art, tx: r.tx, ty: r.ty, ox: r.ox, oy: r.oy, w: 1, h: 1, prop: true, grown: S.t };
+    S.props.push(p); S.occ[r.ty][r.tx] = p; repathAll();
+    S.fx.push({ kind: "bpuff", x: r.tx + .5, y: r.ty + .5, t: S.t, life: .9, face: 1, s: .7 });
+    return false;
+  });
+}
 function woodRate() {   // average timber per second (for the HUD): trips per second x load, plus salvage
   let r = 0; for (const u of S.units) if (u.cutter && !u.hidden) r += CUT.load / 14;
   for (const p of S.props) if (p.owner === "P" && LANDMARKS[p.art] && LANDMARKS[p.art].wood) r += LANDMARKS[p.art].wood;
@@ -1259,8 +1275,9 @@ function stepCutter(u) {
       if (rnd() < .5) S.fx.push({ kind: "chips", x: T.tree.tx + .5, y: T.tree.ty + .6, t: S.t, life: .6, face: u.face }); }
     if (S.t - T.t0 > CUT.chop) {
       const p = T.tree; p.wood = (p.wood ?? CUT.stock) - CUT.load;
-      if (p.wood <= 0) {   // felled: the tile is cleared for building
+      if (p.wood <= 0) {   // felled: the tile is cleared for building, and a sapling takes root to grow back
         S.occ[p.ty][p.tx] = null; S.props = S.props.filter(o => o !== p);
+        (S.regrow ||= []).push({ art: p.art, tx: p.tx, ty: p.ty, ox: p.ox, oy: p.oy, left: CUT.regrow });
         if (p.art === "pine" || p.art === "pine2") S.fx.push({ kind: "fell", x: p.tx + .5, y: p.ty + .5, t: S.t, life: 1.6, face: u.x < p.tx + .5 ? 1 : -1 });
         else S.fx.push({ kind: "bpuff", x: p.tx + .5, y: p.ty + .5, t: S.t, life: .9, face: 1, s: 1 });
       }
@@ -1525,6 +1542,7 @@ const SYNTH = {
   death_soldier: c => { tone(c, { f: 180, f2: 90, type: "triangle", dec: .35, vol: .18 }); hiss(c, { f: 300, dec: .22, vol: .22, type: "lowpass" }); },
   death_yokai: c => { tone(c, { f: 740, f2: 180, a: .02, dec: .7, vol: .15 }); tone(c, { f: 748, f2: 186, a: .02, dec: .7, vol: .1 }); },
   recruit: c => taiko(c, 0, .55),
+  raid: c => { [0, .22, .4, .54, .65, .74].forEach((t, i) => taiko(c, t, .55 + i * .08)); },
   combine: c => { hiss(c, { f: 700, f2: 1400, a: .2, dec: .12, vol: .12 }); taiko(c, .3, .9); taiko(c, .44, 1); [0, 2, 3, 5].forEach((k, i) => pluck(c, PENTA[k], .52 + i * .07, .9)); bell(c, PENTA[5], .84, .8); },
   build_start: c => { wood(c, 0); wood(c, .13, .8); },
   build_complete: c => { taiko(c, 0, .7); bell(c, PENTA[2], .08); },
@@ -1644,7 +1662,11 @@ const CMD = {
     for (const id of ids) { const u = S.units.find(v => v.id === id); if (u && !u.dead && u.team === "P") { u.patrol = null; u.hold = false; u.order = { kind: "attack" }; u.target = t; u.stuck = 0; u.path = null; n++; } }
     return n;
   },
-  startNight() { if (S.phase === "day" && !S.over) beginNight(); },
+  startNight() {
+    if (S.phase !== "day" || S.over) return;
+    const b = earlyBonus(); if (b) { S.rice += b; S.stats.early = (S.stats.early || 0) + b; ui.flash(`Night called early · +${b} rice`); }
+    beginNight();
+  },
   research(id) {
     const t = TECHS.find(x => x.id === id); if (!t || S.over) return "invalid";
     const why = researchBlock(t); if (why) return why; const c = TECH_COST[t.tier];
@@ -1833,7 +1855,26 @@ function planNight() {
     return { type, at: 1.2 + (i / Math.max(1, list.length - 1)) * RULES.spawnWindow, x: g.x, y: g.y }; });
 }
 
+// Calling the night before the day runs out pays rice for every second given up, so a confident player sets the pace.
+const earlyBonus = () => CH.dayLength && !CH.tutorial && S.phase === "day" && S.phaseT > 3 ? Math.round(S.phaseT * 3) : 0;
+// Daylight raids: from day 3, about every other day a small party strikes mid-build, with a war drum a few seconds ahead.
+const RAID = { fromDay: 3, chance: .5, pool: ["ghost", "kappa", "umbrella", "kitsune", "lantern"], warn: 6 };
+function planRaid() {
+  S.raid = null;
+  if (CH.tutorial || CH.sandbox || !CH.dayLength || S.day < RAID.fromDay || rnd() > RAID.chance) return;
+  const seen = new Set(CH.waves.flat().map(w => w[0])), pool = RAID.pool.filter(t => seen.has(t)); if (!pool.length) return;
+  const p = edgePoint(CH.edges[Math.floor(rnd() * CH.edges.length)]), n = 2 + Math.min(3, Math.floor(S.day / 2));
+  S.raid = { at: CH.dayLength - (12 + rnd() * 14), x: p.x, y: p.y, warned: false, list: Array.from({ length: n }, () => pool[Math.floor(rnd() * pool.length)]) };
+}
+function stepRaid() {
+  const R = S.raid; if (!R) return;
+  if (!R.warned && S.phaseT <= R.at + RAID.warn) { const k = keep(); R.warned = true; sfx("raid");
+    advisor.say("War drums at the treeline! A raiding party comes in daylight.", { key: "raid" + S.day, urgent: true, face: "urgent" });
+    if (k) S.camAsk = { frame: [[R.x, R.y], [k.tx + 1.5, k.ty + 1.5]] }; }
+  if (S.phaseT <= R.at) { R.list.forEach((type, i) => spawnEnemy({ type, at: 0, x: R.x + (i % 2) * .4, y: R.y + Math.floor(i / 2) * .4 })); S.raid = null; S.stats.raids = (S.stats.raids || 0) + 1; }
+}
 function beginNight() {
+  S.raid = null;
   if (!S.plan) planNight();
   S.phase = "night"; S.night++; S.phaseT = 0; sfx("night_falls");
   S.nightLog = { n: S.night, t0: S.t, k0: S.stats.killed, l0: S.stats.lost };
@@ -1855,7 +1896,7 @@ function endNight() {
   if (S.night >= CH.nights) { finish(true); return; }
   S.phase = "day"; S.day++; S.phaseT = CH.dayLength; sfx("dawn");
   S.units.forEach(u => { if (u.worker) u.hidden = false; });
-  dawnEvent();
+  dawnEvent(); planRaid();
   if (S.night === 1) advisor.say("We held through the first night. The valley will remember this, my lord.", { key: "held1", face: "proud" });
   if (S.hero && !heroUp()) { spawnHero(); S.fx.push({ kind: "form", x: S.hero.x, y: S.hero.y, t: S.t, life: .9, big: true }); }
   const left = CH.nights - S.night;
@@ -1901,6 +1942,7 @@ function step() {
     if (CH.dayLength) {
       S.phaseT -= DT;
       if (S.phaseT <= RULES.warnAt && !S.plan) planNight();
+      stepRaid();
       if (S.phaseT <= 0) beginNight();
     }
   } else {
@@ -1948,7 +1990,12 @@ function step() {
   stepHero();
   if (heroUp() && S.hero.moving && S.t - (S.hero.trailT || 0) > .09) { S.hero.trailT = S.t; S.fx.push({ kind: "trail", x: S.hero.x, y: S.hero.y, t: S.t, life: .35, face: S.hero.face }); }
   separate();
-  stepPending(); stepProjectiles();
+  stepPending(); stepProjectiles(); stepRegrow();
+  for (const u of S.units) if (!u.dead && u.team === "P" && u.size === 9 && u.hp > 0 && u.hp <= u.maxHp / 3) {   // a mauled tai breaks: six fall, the last three fight on as a kumi
+    u.size = 3; u.maxHp /= 3; u.brokeT = S.t; S.stats.lost += 6; sfx("death_soldier");
+    addDecal(u.x, u.y, 1.1); S.fx.push({ kind: "form", x: u.x, y: u.y, t: S.t, life: .7 });
+    ui.flash(`${UNITS[u.type].name} tai broken · three fight on`);
+  }
   for (const u of S.units) if (!u.dead && !u.worker && u.hp <= 0) {
     u.dead = true; u.deadT = S.t; addDecal(u.x, u.y, u.team === "E" ? .9 : .7 * Math.sqrt(u.size)); sfx(u.team === "E" ? "death_yokai" : "death_soldier");
     if (u.team === "E") { S.stats.killed++; if (S.phase === "night" && !S.firstKill) { S.firstKill = true; hitStop = performance.now() + 110; } } else S.stats.lost += u.size;
@@ -4882,7 +4929,9 @@ function buildWorld() {
     const out = Math.max(-x, -z, x - N, z - N); if (out < 1) continue; const h = Math.min(1, out / 7) ** 1.5 * (3 + 4 * hash(Math.floor(x / 3), Math.floor(z / 3)));
     for (let t = 0; t < 3; t++) K.cone(x, h + .2 + t * .35, z, .5 - t * .12, .6, K3.pine, 6); }
   if (K.parts.length) W.add(new THREE.Mesh(K.geo(), mat));
+  R3.tmap = new Map();
   for (const pr of S.props) if (!pr.invisible && pr.art) {
+    if (TREES.has(pr.art)) continue;   // trees are live (syncTrees)
     const P = G3.ready && G3.prop[pr.art], gm = P && g3clone(P[0], P[2] === "h" ? P[3] : P[1] * Math.min(pr.w, pr.h), P[2] === "h");
     if (gm) { gm.position.set(pr.tx + pr.w / 2, 0, pr.ty + pr.h / 2); gm.rotation.y = pr.art === "lm_shrine" ? Math.PI / 4 : (pr.id * 2.39) % (Math.PI * 2); W.add(gm);
       if (pr.art === "lm_shrine") { const t = g3clone("torii", 1.25, true); if (t) { t.position.set(pr.tx + pr.w + .15, 0, pr.ty + pr.h + .15); t.rotation.y = Math.PI / 4; W.add(t); } }   // a gate before the shrine
@@ -5057,12 +5106,13 @@ function syncUnits(pose) {
   for (const u of S.units) {
     if (u.dead) continue; seen.add(u.id);
     let e = R3.umap.get(u.id);
+    if (e && e.size !== (u.size || 1)) { R3.world.remove(e.g); R3.umap.delete(u.id); e = null; }   // a tai broke into a kumi: swap the figure
     if (!e) {
       const one = GLB3 && G3.ready && G3.fig[u.type], g = new THREE.Group(), n = one ? 1 : (SIZES[u.size || 1] || SIZES[1]).figs, offs = one ? [[0, 0]] : (SIZES[u.size || 1] || SIZES[1]).offs, figs = [];
       for (let i = 0; i < n; i++) { const f = (one && glbFigure(u.type, u.size || 1)) || figure(FIG_OF[u.type] || "spear"), [ox, oz] = pxToTile(offs[i][0], offs[i][1]);
         f.position.set(ox, 0, oz); f.scale.setScalar(FIG_SCALE * f.userData.scale); f.userData.ph = i * 1.7; g.add(f); figs.push(f); }
       const pool = new THREE.Mesh(R3.poolGeo, R3.poolMat); pool.rotation.x = -Math.PI / 2; pool.position.y = .015; pool.scale.setScalar(.6 + (n - 1) * .25); g.add(pool);
-      R3.world.add(g); e = { g, figs, px: u.x, py: u.y, yaw: u.team === "E" ? -Math.PI * .75 : Math.PI / 4, phase: 0, mv: 0, formT: u.formT }; R3.umap.set(u.id, e);
+      R3.world.add(g); e = { g, figs, px: u.x, py: u.y, yaw: u.team === "E" ? -Math.PI * .75 : Math.PI / 4, phase: 0, mv: 0, formT: u.formT, size: u.size || 1 }; R3.umap.set(u.id, e);
       if (u.formT !== undefined && S.t - u.formT < 1) puff3(u.x, u.y, u.formT + .32);
     }
     e.g.visible = !u.hidden;
@@ -5234,13 +5284,31 @@ function syncGhost() {
     const m = new THREE.Mesh(buildingKit(fake), R3.ghostMat); R3.world.add(m); R3.ghost = { m, key }; }
   R3.ghost.m.position.set(p.tx + d.w / 2, .01, p.ty + d.h / 2);
 }
+function treeMesh(pr) {
+  const P = G3.ready && G3.prop[pr.art], gm = P && g3clone(P[0], P[2] === "h" ? P[3] : P[1] * Math.min(pr.w, pr.h), P[2] === "h");
+  const m = gm || new THREE.Mesh(propKit(pr.art, pr.w, pr.h, pr.id), R3.kitMat);
+  m.position.set(pr.tx + pr.w / 2, 0, pr.ty + pr.h / 2); if (gm) m.rotation.y = (pr.id * 2.39) % (Math.PI * 2); return m;
+}
+function syncTrees() {
+  const T = R3.tmap; if (!T) return; const seen = new Set();
+  for (const pr of S.props) if (TREES.has(pr.art) && !pr.invisible) {
+    seen.add(pr.id); let e = T.get(pr.id);
+    if (!e) { e = { g: treeMesh(pr), born: pr.grown ?? -9 }; e.s0 = e.g.scale.x; R3.world.add(e.g); T.set(pr.id, e); }
+    const a = (S.t - e.born) / 1.2; if (a < 1) e.g.scale.setScalar(e.s0 * Math.max(.05, 1 - (1 - a) ** 3)); else if (e.born > -9) { e.g.scale.setScalar(e.s0); e.born = -9; }
+  }
+  for (const [id, e] of T) if (!seen.has(id)) {   // felled: tip over and sink away
+    e.fell ??= S.t; const a = (S.t - e.fell) / 1.1;
+    if (a >= 1 || a < 0) { R3.world.remove(e.g); T.delete(id); continue; }
+    e.g.rotation.z = -(Math.min(1, a * 1.6) ** 2) * 1.45; e.g.position.y = -Math.max(0, a - .6) * .8;
+  }
+}
 function render3d() {
   if (!r3on()) return;
   const now = performance.now(), dt = Math.min(.1, (now - (R3.last || now)) / 1000); R3.last = now;
   if (R3.S !== S) buildWorld();
   const W = Math.round(vw * R3.dpr), H = Math.round(vh * R3.dpr);
   if (R3.w !== W || R3.h !== H) { R3.w = W; R3.h = H; R3.gl.setSize(vw, vh); R3.rt.setSize(W, H); R3.quad.material.uniforms.res.value.set(W, H); }
-  syncBuildings(); syncGhost();
+  syncBuildings(); syncGhost(); syncTrees();
   R3.poseAcc += dt; const pose = R3.poseAcc >= 1 / 12; if (pose) R3.poseAcc %= 1 / 12;   // poses on twos
   syncUnits(pose || !R3.posed); R3.posed = true;
   syncCamera();
@@ -5612,7 +5680,7 @@ const ui = {
       const dj = S.buildings.find(b => b.type === "dojo");
       hint = S.phase === "day" ? (hasDojo() ? "Tap a soldier or a building · hold and drag to select a group" : dj ? `Drill yard under construction · ${Math.ceil((1 - dj.progress) * BUILDINGS.dojo.buildTime)}s` : "Build a drill yard to recruit") : "Defend the keep";
       html = `<button class="btn" data-act="build"><img src="assets/ic_build.webp" alt="">Build</button><button class="btn" data-act="recruit"><img src="assets/ic_recruit.webp" alt="">Recruit</button>` +
-        (S.phase === "day" ? `<button class="btn alt" data-act="night"><img src="assets/ic_moon.webp" alt="">Night</button>` : `<button class="btn alt" data-act="all"><img src="assets/ic_selectall.webp" alt="">All</button>`);
+        (S.phase === "day" ? `<button class="btn alt" data-act="night"><img src="assets/ic_moon.webp" alt="">Night${earlyBonus() ? `<small class="early">+${earlyBonus()}</small>` : ""}</button>` : `<button class="btn alt" data-act="all"><img src="assets/ic_selectall.webp" alt="">All</button>`);
     }
     if (performance.now() - ui.flashT < 1800) hint = ui.flashMsg;
     $("hint").textContent = hint;

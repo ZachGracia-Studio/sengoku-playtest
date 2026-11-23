@@ -14,3 +14,11 @@ Bot: `tools/playbot/bot.js` (a sensible first-time player, drives the game only 
 3. **A tai dies all at once.** Nine soldiers vanish in one moment; most losses in the Pass are single tai wipes.
 4. **Valley has no tension.** The keep is never below ~85%; a passive player wins.
 5. **Nights are short against days.** Nights run 17–35 s (Valley) against 60 s days.
+
+## Round 2 — after the changes (same bot, 3 runs each)
+Changes: felled trees regrow (70 s of spring growth; summer ×1, autumn ×0.55, winter none), a 10-tree home wood south of the Pass keep (protected from thinning), a tai at ⅓ health breaks into a kumi (6 lost, 3 fight on), 45 s days, Night-early bonus (3 rice per second given up), daylight raids from day 3 (~every other day, 2–5 small yokai, war-drum warning 6 s ahead), heavier late waves (Valley N4–5, Pass N5–7).
+
+| Chapter | Result | Length | Losses | Notes |
+|---|---|---|---|---|
+| Valley Keep | 3/3 win | 6.3–7.9 min | 1–16 | 1–3 raids; still the gentle chapter |
+| Mountain Pass | 3/3 win | 9.8–10.6 min | 28–30 | losses climb N3→N7 (2–11 a night) instead of one late cliff; wood lasts to the end; 4–7 upgrades; 2–3 tai breaks |
