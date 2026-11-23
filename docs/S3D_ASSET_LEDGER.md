@@ -97,3 +97,8 @@ Kittl concepts (2048 or 832x1248 PNG) and Tripo task pages. Tripo: https://studi
 - Wired: diorama base (earth + stone slab), blue river channel, sculpted bridge, reeds on banks, brush/stumps/logs/cherry/bare trees, village props round the keep (well, cart, firewood, jizo, stall, lantern), scarecrow per farm, boat, brute sculpt. Dressing hides when built over.
 - Still open: pond, paddy_young, watermill (stuck generating); torii, hay (failed). Tripo yūrei exported (`yurei.glb`) but the Blender `gh.glb` stays in use. Units not rigged yet.
 - Test flag: `?fog=0` hides the gold fog.
+
+## 23 Nov — formation evolutions (one figure per formation)
+- Kumi (3) shows one veteran, tai (9) one captain. Sculpts: spear_k/t, arc_k/t, sam_k/t (Kittl concepts referenced from the base units, clan tomoe crest instead of the plain red circle). Other unit types use the base sculpt + back banner + scale until they get their own.
+- Base ring: red = kumi, gold = tai. Combine plays: trio runs together and folds, dust ring, the formation pops up and its banner unfurls.
+- Ink outline is off in GLB mode (`?ink=1` to compare).

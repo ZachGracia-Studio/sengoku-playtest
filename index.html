@@ -1552,8 +1552,8 @@ const CMD = {
         const p = nearestFree(cx, cy);
         const hp = trio.reduce((s, u) => s + u.hp, 0);
         const art = type === "cavalry" ? [...new Set(trio.map(u => u.art))] : null;
-        trio.forEach(u => { S.units = S.units.filter(o => o !== u); ids.delete && ids.delete(u.id); });
-        const m = addUnit(type, p.x, p.y, size, { born: S.t - 1 });
+        S.merges ||= {}; trio.forEach(u => { S.merges[u.id] = { x: p.x, y: p.y, t: S.t }; S.units = S.units.filter(o => o !== u); ids.delete && ids.delete(u.id); });
+        const m = addUnit(type, p.x, p.y, size, { born: S.t - 1 }); m.formT = S.t;   // the 3D view plays the gather-and-rise
         m.hp = hp; if (art) m.arts = art;   // keep each cavalry rider's design inside the formation
         if (ids.add) ids.add(m.id);
         addDecal(p.x, p.y, .8); S.fx.push({ kind: "form", x: p.x, y: p.y, t: S.t, life: .7 });
@@ -4890,7 +4890,7 @@ const G3 = { ready: false, src: {}, grad: null,
   dress: { boat: [.95], reeds: [.8], bush: [.7], stump: [.45], log: [.8], cherry: [2.0, "h"], bare_tree: [1.9, "h"], stone_lantern: [.9, "h"], well: [.95], cart: [1.1], firewood: [.75], jizo: [.6, "h"], stall: [1.3], scarecrow: [1.1, "h"] } };
 async function loadGLB3() {
   const { GLTFLoader } = await import("./vendor/jsm/loaders/GLTFLoader.js"); const L = new GLTFLoader();
-  const names = new Set([...Object.values(G3.bld).flat(), ...Object.values(G3.fig), ...Object.values(G3.prop).map(p => p[0]), ...G3.field, ...Object.keys(G3.dress), "bridge"]);
+  const names = new Set([...Object.values(G3.bld).flat(), ...Object.values(G3.fig), ...Object.values(G3.prop).map(p => p[0]), ...G3.field, ...Object.keys(G3.dress), "bridge", ...["spear", "arc", "sam"].flatMap(n => [n + "_k", n + "_t"])]);
   G3.grad = new THREE.DataTexture(new Uint8Array([110, 185, 255]), 3, 1, THREE.RedFormat); G3.grad.minFilter = G3.grad.magFilter = THREE.NearestFilter; G3.grad.needsUpdate = true;
   await Promise.all([...names].map(n => L.loadAsync(`assets/3d/${n}.glb`).then(g => {
     g.scene.traverse(o => { if (o.isMesh) { const m = o.material; o.material = new THREE.MeshToonMaterial({ map: m.map || null, color: m.map ? 0xffffff : (m.color || 0xcccccc), gradientMap: G3.grad }); if (o.material.map) o.material.map.colorSpace = THREE.NoColorSpace; } });
@@ -4909,12 +4909,35 @@ function glbBuilding(b) {
   const n = G3.bld[b.type][b.tier || 0], g = g3clone(n, Math.min(b.w, b.h) * 1.02); if (!g) return null;
   g.rotation.y = (b.tier || 0) === 0 && G3.rot[b.type] !== undefined ? G3.rot[b.type] : Math.PI / 2; return g;
 }
-function glbFigure(type) {
+// one figure per formation: a kumi is a veteran, a tai a captain. Sculpted evolutions where they exist (spear_k, arc_t, ...);
+// otherwise the base sculpt, a little bigger, with a back banner and a base ring.
+const EVO = { 3: { sfx: "_k", s: 1.15, ring: 0xc8372d }, 9: { sfx: "_t", s: 1.3, ring: 0xd4a640 } };
+function sashimono(h, gold) {
+  const g = new THREE.Group(), m = c => new THREE.MeshToonMaterial({ color: c, gradientMap: G3.grad || null });
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(.018, .018, h * .75, 5), m(0x2a2522)); pole.position.y = h * .375; g.add(pole);
+  const flag = new THREE.Mesh(new THREE.BoxGeometry(.2, h * .38, .012), m(0xc8372d)); flag.geometry.translate(.1, -h * .19, 0); flag.position.set(.02, h * .74, 0); g.add(flag);
+  const crest = new THREE.Mesh(new THREE.CylinderGeometry(.05, .05, .016, 10), m(gold ? 0xd4a640 : 0x1b1b1f)); crest.rotation.x = Math.PI / 2; crest.position.set(.1, -h * .19, 0); flag.add(crest);
+  g.userData.flag = flag; return g;
+}
+function glbFigure(type, size = 1) {
   if (!G3.ready) return null;
-  const n = G3.fig[type], body = n && g3clone(n, (G3.figH[type] || 1.45) / FIG_SCALE, true); if (!body) return null;
-  const root = new THREE.Group(); root.add(body);
-  root.userData = { body, legs: [], armR: null, armL: null, weaponArm: null, scale: 1, float: type === "ghost" || type === "lantern", glb: true };
+  const E = EVO[size], base = G3.fig[type], evo = E && base && G3.src[base + E.sfx] ? base + E.sfx : null, H = (G3.figH[type] || 1.45) / FIG_SCALE;
+  const body = (evo && g3clone(evo, H * E.s * 1.05, true)) || (base && g3clone(base, H * (E ? E.s : 1), true)); if (!body) return null;
+  const root = new THREE.Group(); root.add(body); let flag = null;
+  if (E && !evo && !G3.figH[type]) {   // interim evolution: a back banner on the base sculpt
+    const b = sashimono(H * E.s * .95, size === 9); b.position.set(0, H * E.s * .28, -.2); root.add(b); flag = b.userData.flag; }
+  if (E) { const ring = new THREE.Mesh(new THREE.RingGeometry(.34, .42, 24), new THREE.MeshBasicMaterial({ color: E.ring, transparent: true, opacity: .8 })); ring.rotation.x = -Math.PI / 2; ring.position.y = .02 / FIG_SCALE; ring.scale.setScalar(1 / FIG_SCALE * (size === 9 ? 1.25 : 1)); root.add(ring); }
+  root.userData = { body, legs: [], armR: null, armL: null, weaponArm: null, scale: 1, float: type === "ghost" || type === "lantern", glb: true, flag };
   return root;
+}
+function puff3(x, z, t0) {   // a ring of paper-white dust where a formation forms
+  const m = new THREE.Mesh(new THREE.RingGeometry(.2, .55, 28), new THREE.MeshBasicMaterial({ color: 0xf3ecdd, transparent: true, opacity: 0, depthWrite: false }));
+  m.rotation.x = -Math.PI / 2; m.position.set(x, .05, z); R3.world.add(m); (R3.puffs ||= []).push({ m, t0 });
+}
+function tickPuffs() {
+  for (let i = (R3.puffs || []).length - 1; i >= 0; i--) { const p = R3.puffs[i], a = (S.t - p.t0) / .6;
+    if (a >= 1) { R3.world.remove(p.m); p.m.geometry.dispose(); R3.puffs.splice(i, 1); continue; }
+    p.m.material.opacity = a < 0 ? 0 : .85 * (1 - a); p.m.scale.setScalar(.6 + Math.max(0, a) * 1.6); p.m.position.y = .05 + Math.max(0, a) * .3; }
 }
 function pxToTile(px, py) { return [(px / (TW / 2) + py / (TH / 2)) / 2 * .5, (py / (TH / 2) - px / (TW / 2)) / 2 * .5]; }
 function syncUnits(pose) {
@@ -4923,11 +4946,12 @@ function syncUnits(pose) {
     if (u.dead) continue; seen.add(u.id);
     let e = R3.umap.get(u.id);
     if (!e) {
-      const g = new THREE.Group(), n = (SIZES[u.size || 1] || SIZES[1]).figs, offs = (SIZES[u.size || 1] || SIZES[1]).offs, figs = [];
-      for (let i = 0; i < n; i++) { const f = glbFigure(u.type) || figure(FIG_OF[u.type] || "spear"), [ox, oz] = pxToTile(offs[i][0], offs[i][1]);
+      const one = GLB3 && G3.ready && G3.fig[u.type], g = new THREE.Group(), n = one ? 1 : (SIZES[u.size || 1] || SIZES[1]).figs, offs = one ? [[0, 0]] : (SIZES[u.size || 1] || SIZES[1]).offs, figs = [];
+      for (let i = 0; i < n; i++) { const f = (one && glbFigure(u.type, u.size || 1)) || figure(FIG_OF[u.type] || "spear"), [ox, oz] = pxToTile(offs[i][0], offs[i][1]);
         f.position.set(ox, 0, oz); f.scale.setScalar(FIG_SCALE * f.userData.scale); f.userData.ph = i * 1.7; g.add(f); figs.push(f); }
       const pool = new THREE.Mesh(R3.poolGeo, R3.poolMat); pool.rotation.x = -Math.PI / 2; pool.position.y = .015; pool.scale.setScalar(.6 + (n - 1) * .25); g.add(pool);
-      R3.world.add(g); e = { g, figs, px: u.x, py: u.y, yaw: u.team === "E" ? -Math.PI * .75 : Math.PI / 4, phase: 0, mv: 0 }; R3.umap.set(u.id, e);
+      R3.world.add(g); e = { g, figs, px: u.x, py: u.y, yaw: u.team === "E" ? -Math.PI * .75 : Math.PI / 4, phase: 0, mv: 0, formT: u.formT }; R3.umap.set(u.id, e);
+      if (u.formT !== undefined && S.t - u.formT < 1) puff3(u.x, u.y, u.formT + .32);
     }
     e.g.visible = !u.hidden;
     if (!pose) continue;
@@ -4938,6 +4962,10 @@ function syncUnits(pose) {
     else if (d > .004) e.yaw = Math.atan2(dx, dy);
     e.phase += e.mv ? .75 : .17;
     e.g.position.set(u.x, 0, u.y);
+    if (e.formT !== undefined) { const a = (S.t - e.formT - .32) / .45;   // the formation rises out of the dust: squash, overshoot, settle; the banner unfurls
+      const k = a <= 0 ? 0 : a >= 1 ? 1 : 1 + Math.sin(a * Math.PI) * .18 * (1 - a) - (1 - a) ** 3; e.g.scale.setScalar(Math.max(.001, k));
+      for (const f of e.figs) if (f.userData.flag) f.userData.flag.scale.y = Math.max(.01, Math.min(1, (a - .4) / .5));
+      if (a >= 1.2) { e.formT = undefined; e.g.scale.set(1, 1, 1); } }
     for (const f of e.figs) {
       const D = f.userData, ph = e.phase + D.ph, s = e.mv ? Math.sin(ph) : 0, idle = Math.sin(ph * .35) * .05;
       let dyaw = e.yaw - f.rotation.y; dyaw = Math.atan2(Math.sin(dyaw), Math.cos(dyaw)); f.rotation.y += dyaw * .6;
@@ -4952,10 +4980,13 @@ function syncUnits(pose) {
     }
   }
   for (const [id, e] of R3.umap) if (!seen.has(id)) {   // the fallen topple and sink into the ground
-    R3.umap.delete(id); e.dieT = S.t; const pool = e.g.children.find(o => o.geometry === R3.poolGeo); if (pool) e.g.remove(pool); R3.dying.push(e); }
-  for (let i = R3.dying.length - 1; i >= 0; i--) { const e = R3.dying[i], a = (S.t - e.dieT) / .9;
+    R3.umap.delete(id); e.dieT = S.t; e.merge = S.merges && S.merges[id]; if (e.merge) delete S.merges[id]; const pool = e.g.children.find(o => o.geometry === R3.poolGeo); if (pool) e.g.remove(pool); R3.dying.push(e); }
+  for (let i = R3.dying.length - 1; i >= 0; i--) { const e = R3.dying[i], a = (S.t - e.dieT) / (e.merge ? .4 : .9);
     if (a >= 1 || a < 0) { R3.world.remove(e.g); R3.dying.splice(i, 1); continue; }
+    if (e.merge) { const q = a * a; e.g.position.set(e.px + (e.merge.x - e.px) * q, Math.sin(a * Math.PI) * .25, e.py + (e.merge.y - e.py) * q);   // the three run together and fold into one
+      e.g.scale.setScalar(1 - q * .75); e.g.rotation.y = q * 2.5; continue; }
     for (const f of e.figs) { f.rotation.z = Math.min(1, a * 3) * 1.45; f.position.y = -Math.max(0, a - .45) * 1.2; } }
+  tickPuffs();
 }
 
 /* ---------- camera: the 2D isometric projection, reproduced ---------- */
