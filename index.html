@@ -4068,7 +4068,7 @@ function drawYards(na) {
    cloud. Everything outside the player's territory (keep domain + claimed landmarks)
    is covered; the cloud rolls back as territory grows. Units are drawn above it so
    approaching yokai stay readable; trees and rocks out there are hidden. */
-const FOG_ON = STYLE_V2;
+const FOG_ON = STYLE_V2 && !/[?&]fog=0\b/.test(location.search);
 let fogTex = null, fogCv = null;
 function makeFogTex() {
   const N = 1024, c = document.createElement("canvas"); c.width = c.height = N; const g = c.getContext("2d");
@@ -4779,24 +4779,45 @@ function buildWorld() {
     const h = out > 0 ? Math.min(1, out / 7) ** 1.5 * (3 + 4 * hash(Math.floor(x / 3), Math.floor(z / 3))) : 0; p.setY(i, h);
     c.setHex(K3.ground); const k = .97 + hash(Math.floor(x * 2), Math.floor(z * 2)) * .05; col.push(c.r * k, c.g * k, c.b * k); }
   G.setAttribute("color", new THREE.Float32BufferAttribute(col, 3)); G.computeVertexNormals();
-  W.add(new THREE.Mesh(G, mat));
+  if (!GLB3) W.add(new THREE.Mesh(G, mat));
+  if (GLB3) {   // the board stands on its own: a slab of earth and stone under the turf, like a diorama base
+    const tmat = c => new THREE.MeshToonMaterial({ color: c, gradientMap: G3.grad || null });
+    const e1 = new THREE.Mesh(new THREE.BoxGeometry(N, .7, N), tmat(0x7d5d3d)); e1.position.set(N / 2, -.24 - .35, N / 2); W.add(e1);
+    const e2 = new THREE.Mesh(new THREE.BoxGeometry(N - .06, .8, N - .06), tmat(0x5c544b)); e2.position.set(N / 2, -.94 - .4, N / 2); W.add(e2); }
   if (GLB3) {   // the board: chunky turf tiles, faintly varied, like the sculpted dioramas
     const tg = new THREE.BoxGeometry(.985, .24, .985); tg.translate(0, -.12, 0);
     const tm = new THREE.MeshToonMaterial({ color: 0xffffff, gradientMap: G3.grad || null }), inst = new THREE.InstancedMesh(tg, tm, N * N), M = new THREE.Matrix4(), cc = new THREE.Color();
     const greens = [0x6a8458, 0x6f895c, 0x678155, 0x6c865a];
     let i = 0; for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) {
       const wet = CH.river && x === CH.river.x && z !== CH.river.bridge + 1;
-      M.makeTranslation(x + .5, wet ? -.1 : .006 + hash(x, z) * .01, z + .5); inst.setMatrixAt(i, M);
-      cc.setHex(wet ? 0x4a6788 : greens[Math.floor(hash(x * 3, z * 7) * greens.length)]); inst.setColorAt(i, cc); i++; }
+      M.makeTranslation(x + .5, wet ? -.09 : .006 + hash(x, z) * .01, z + .5); inst.setMatrixAt(i, M);
+      cc.setHex(wet ? [0x6f9fc6, 0x6899c1, 0x75a5ca][Math.floor(hash(x, z * 3) * 3)] : greens[Math.floor(hash(x * 3, z * 7) * greens.length)]); inst.setColorAt(i, cc); i++; }
     W.add(inst); }
   const K = new Kit();
+  const bridgeGLB = GLB3 && G3.ready && CH.river && g3clone("bridge", 2.1);
   if (CH.river) { const rx = CH.river.x + .5, br = CH.river.bridge;
-    K.box(rx, -.04, br / 2, 1.3, .05, br, K3.water).box(rx, -.04, (br + 2 + N) / 2, 1.3, .05, N - br - 2, K3.water);
-    K.box(rx, .05, br + 1, 1.7, .08, 1.7, K3.wood); for (const s of [-1, 1]) K.box(rx, .13, br + 1 + s * .8, 1.7, .12, .06, K3.ink); }
+    if (!GLB3) K.box(rx, -.04, br / 2, 1.3, .05, br, K3.water).box(rx, -.04, (br + 2 + N) / 2, 1.3, .05, N - br - 2, K3.water);
+    if (bridgeGLB) { bridgeGLB.position.set(rx, 0, br + 1); W.add(bridgeGLB); }
+    else { K.box(rx, .05, br + 1, 1.7, .08, 1.7, K3.wood); for (const s of [-1, 1]) K.box(rx, .13, br + 1 + s * .8, 1.7, .12, .06, K3.ink); } }
+  R3.decor = [];
+  if (GLB3 && G3.ready) {   // dress the open ground: reeds on the banks, brush and stumps in the fields, a little village round the keep
+    const [kx, ky] = CH.keepAt, kc = [kx + 1, ky + 1], put = (n, x, z, a) => { const D = G3.dress[n], m = D && g3clone(n, D[0] * (.85 + hash(x, z * 5) * .3), D[1] === "h"); if (!m) return;
+      m.position.set(x + .5 + (hash(x * 9, z) - .5) * .3, 0, z + .5 + (hash(x, z * 9) - .5) * .3); m.rotation.y = a; W.add(m); R3.decor.push({ m, tx: x, ty: z }); };
+    if (CH.river) { const bz = CH.river.bridge + 5 < N ? CH.river.bridge + 5 : CH.river.bridge - 4, bt = g3clone("boat", .95);
+      if (bt) { bt.position.set(CH.river.x + .5, -.08, bz + .5); bt.rotation.y = Math.PI / 2; W.add(bt); } }
+    const village = ["well", "cart", "firewood", "jizo", "stall", "stone_lantern"]; let vi = 0;
+    for (let z = 0; z < N; z++) for (let x = 0; x < N; x++) {
+      if (S.occ[z][x] || (CH.river && Math.abs(z - CH.river.bridge - .5) < 1.6 && Math.abs(x - CH.river.x) < 2)) continue;
+      const h = hash(x * 7 + 3, z * 11 + 1), dk = Math.hypot(x + .5 - kc[0], z + .5 - kc[1]), a = hash(x, z) * Math.PI * 2;
+      if (dk < 2.6) continue;
+      if (CH.river && Math.abs(x - CH.river.x) === 1) { if (h < .35) put("reeds", x, z, a); continue; }
+      if (dk < 4.2) { if (h < .22 && vi < village.length) put(village[vi++], x, z, Math.atan2(kc[0] - x, kc[1] - z)); continue; }
+      const edge = Math.min(x, z, N - 1 - x, N - 1 - z) < 2;
+      if (h < (edge ? .16 : .05)) put(edge ? ["bush", "bush", "cherry", "stump", "log", "bare_tree"][Math.floor(hash(z, x) * 6)] : ["bush", "stump", "log", "bush"][Math.floor(hash(z, x) * 4)], x, z, a); } }
   if (CH.ridge) for (let x = 0; x <= CH.ridge.sum; x++) if (!CH.ridge.gaps.includes(x)) { const y = CH.ridge.sum - x;
     K.rock(x + .5, 0, y + .5, .55 + hash(x, y) * .25, K3.stone, x).rock(x + .2, 0, y + .8, .3, K3.stone, x + 3); }
   // pines dotted on the hills beyond the map edge, for the painting to read as land
-  for (let i = 0; i < 160; i++) { const a = hash(i, 1) * Math.PI * 2, r0 = N * .72 + 3 + hash(i, 2) * 12, x = N / 2 + Math.cos(a) * r0, z = N / 2 + Math.sin(a) * r0;
+  for (let i = 0; i < (GLB3 ? 0 : 160); i++) { const a = hash(i, 1) * Math.PI * 2, r0 = N * .72 + 3 + hash(i, 2) * 12, x = N / 2 + Math.cos(a) * r0, z = N / 2 + Math.sin(a) * r0;
     const out = Math.max(-x, -z, x - N, z - N); if (out < 1) continue; const h = Math.min(1, out / 7) ** 1.5 * (3 + 4 * hash(Math.floor(x / 3), Math.floor(z / 3)));
     for (let t = 0; t < 3; t++) K.cone(x, h + .2 + t * .35, z, .5 - t * .12, .6, K3.pine, 6); }
   if (K.parts.length) W.add(new THREE.Mesh(K.geo(), mat));
@@ -4841,7 +4862,11 @@ function syncBuildings() {
       for (let i = 0; i < 4 && stage > 0; i++) for (let j = 0; j < 4; j++) K.box(-.3 + i * .2, .05, -.3 + j * .2, .05, .08 + stage * .07, .05, stage >= 3 ? K3.thatch : K3.pine);
       const m = new THREE.Mesh(K.geo(), R3.kitMat); m.position.set(fl.x + .5, 0, fl.y + .5); R3.world.add(m); R3.fmap.set(id, e = { m, stage }); }
   }
+  if (G3.ready) for (const b of S.buildings) if ((b.fields || []).length >= 3) {   // a scarecrow keeps watch over each farm's paddies
+    const id = "sc" + b.id, fl = b.fields[1]; fseen.add(id);
+    if (!R3.fmap.has(id)) { const m = g3clone("scarecrow", .95, true); if (m) { m.position.set(fl.x + .82, 0, fl.y + .2); m.rotation.y = Math.PI / 4; R3.world.add(m); R3.fmap.set(id, { m, stage: -1 }); } } }
   for (const [id, e] of R3.fmap) if (!fseen.has(id)) { R3.world.remove(e.m); R3.fmap.delete(id); }
+  for (const d of R3.decor || []) d.m.visible = !S.occ[d.ty][d.tx] && !fseen.has(`${d.tx},${d.ty}`);   // building over dressing clears it
 }
 const FIG_OF = { spear: "spear", archer: "archer", samurai: "samurai", monk: "monk", ninja: "ninja", gunner: "gunner", kage: "kage", cavalry: "cavalry",
   farmer: "farmer", cutter: "cutter", builder: "builder", oni: "oni", brute: "brute", kappa: "kappa", lantern: "kappa", umbrella: "kitsune", tengu: "tengu", ghost: "ghost", kitsune: "kitsune", gashadokuro: "gashadokuro" };
@@ -4860,10 +4885,12 @@ const G3 = { ready: false, src: {}, grad: null,
   prop: { pine: ["pine", 1.0, "h", 2.1], pine2: ["cedar", 1.0, "h", 2.3], sc_maple: ["maple", 1.0, "h", 1.9], sc_bamboo: ["bamboo", 1.0, "h", 2.0], rocks: ["rocks", 1.0], sc_rocks: ["bank_rocks", 1.0],
     bale: ["hay", .9], lm_shrine: ["hokora", 1.4], lm_ruin: ["ruin_wall", 1.8], lm_lantern: ["stone_lantern", 1.5], lm_farm: ["veg_field", 1.9],
     sp_stream: ["waterfall", 2.6], sp_outcrop: ["cliff_block", 2.6], sp_hill: ["hill", 2.8], sp_bamboo: ["bamboo", 1.2, "h", 2.4], sp_boulders: ["bank_rocks", 2.4], sp_pond: ["pond", 2.6] },
-  field: ["paddy_young", "paddy_young", "paddy_young", "paddy_ripe"] };
+  field: ["paddy_young", "paddy_young", "paddy_young", "paddy_ripe"],
+  // board dressing: [model, size in tiles, "h" = size is a height]
+  dress: { boat: [.95], reeds: [.8], bush: [.7], stump: [.45], log: [.8], cherry: [2.0, "h"], bare_tree: [1.9, "h"], stone_lantern: [.9, "h"], well: [.95], cart: [1.1], firewood: [.75], jizo: [.6, "h"], stall: [1.3], scarecrow: [1.1, "h"] } };
 async function loadGLB3() {
   const { GLTFLoader } = await import("./vendor/jsm/loaders/GLTFLoader.js"); const L = new GLTFLoader();
-  const names = new Set([...Object.values(G3.bld).flat(), ...Object.values(G3.fig), ...Object.values(G3.prop).map(p => p[0]), ...G3.field, "bridge"]);
+  const names = new Set([...Object.values(G3.bld).flat(), ...Object.values(G3.fig), ...Object.values(G3.prop).map(p => p[0]), ...G3.field, ...Object.keys(G3.dress), "bridge"]);
   G3.grad = new THREE.DataTexture(new Uint8Array([110, 185, 255]), 3, 1, THREE.RedFormat); G3.grad.minFilter = G3.grad.magFilter = THREE.NearestFilter; G3.grad.needsUpdate = true;
   await Promise.all([...names].map(n => L.loadAsync(`assets/3d/${n}.glb`).then(g => {
     g.scene.traverse(o => { if (o.isMesh) { const m = o.material; o.material = new THREE.MeshToonMaterial({ map: m.map || null, color: m.map ? 0xffffff : (m.color || 0xcccccc), gradientMap: G3.grad }); if (o.material.map) o.material.map.colorSpace = THREE.NoColorSpace; } });
@@ -5661,7 +5688,7 @@ document.getElementById("zoom").addEventListener("click", e => {
 // test/debug hook (the game never uses it)
 window.__sengoku = { TEST_CFG, TEST_FLAG, playtest, RULES, queued, lockText, stepTraining, get S() { return S; }, get CH() { return CH; }, get tut() { return tut; }, CMD, addUnit, ASSETS, IMG, step, start, HERO, heroLevel, palAt, newWorld, canPlace, popCap, popUsed,
   incomeRate, unlockedUnits, rangeOf, costOf, frameFor, zoomStep, zoomLevels, wxNow, drawMini, ANIM, SANDBOX, CHAPTERS, UNITS, BUILDINGS, SIZES, cam, ui, onTap, toScreen, iso, hitTarget, findPath, progress, tutorialTick, planNight,
-  setRunning(v) { running = v; } };
+  G3, setRunning(v) { running = v; } };
 }
 </script>
 </body>
