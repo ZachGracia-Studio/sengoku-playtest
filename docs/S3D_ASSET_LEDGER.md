@@ -114,3 +114,8 @@ Kittl concepts (2048 or 832x1248 PNG) and Tripo task pages. Tripo: https://studi
 - Weapons split to carried meshes (`bl_split_weapon.py`); back banners rebound rigidly (`bl_rigid_banner.py`, `BONE=` env — Hips for captains whose AI attack clips lunge hard, Spine2 otherwise).
 - Known minor: archer captain's lower bow limb separates briefly mid-draw; gunner rifle reads thin; ninja has no split weapon.
 - Tripo balance after rollout: 19,516 credits (no cash spent).
+
+## 2026-11-23 — feel pass
+- Samurai veteran banner rebound to Hips (stays upright through the slash).
+- Combat sync: rigged figures play one swing window per attack (SWING table: melee preset impact 2.04s, archers 1.4s, gunner 0.9s); damage waits for the impact frame via S.pend (melee ~0.22s windup, measured in game).
+- Sound: synthesised Web Audio kit (taiko, plucked string, temple bell, wood; miyako-bushi scale on D) voices every sfx() event, plus new gun_shot and combine. Sound On/Off toggle on the pause screen (localStorage sengoku.sound).

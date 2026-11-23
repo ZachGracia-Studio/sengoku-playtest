@@ -351,6 +351,7 @@ body.board-c #bottom { text-align: center; }
   <h1 style="font-size:34px">PAUSED</h1>
   <div class="row"><button class="btn" id="resumeBtn">Resume</button></div>
   <div class="row"><button class="btn alt" id="quitBtn">Chapters</button></div>
+  <div class="row"><button class="btn alt" id="soundBtn">Sound: On</button></div>
   <div class="row"><button class="btn alt" id="fbPauseBtn">Send feedback</button></div>
 </div>
 <div class="screen hidden" id="fbScreen">
@@ -816,7 +817,7 @@ let S = null, CH = null, MAP = 14, nextId = 1;
 function newWorld(chapter, seed = 7) {
   CH = chapter; MAP = chapter.map; rngSeed = seed; nextId = 1;
   S = { t: 0, rice: chapter.startRice, phase: "day", night: 0, day: 1, phaseT: chapter.dayLength || 0, nightAmt: 0, wood: chapter.startWood ?? (chapter.sandbox ? 3000 : chapter.tutorial ? 300 : 100),
-    units: [], buildings: [], props: [], projectiles: [], decals: [], fx: [], clouds: [], spawnQueue: [], plan: null, hero: null, defend: true, tech: {}, study: null, tips: {}, rationT: -1, omen: 0,
+    units: [], buildings: [], props: [], projectiles: [], pend: [], decals: [], fx: [], clouds: [], spawnQueue: [], plan: null, hero: null, defend: true, tech: {}, study: null, tips: {}, rationT: -1, omen: 0,
     occ: Array.from({ length: MAP }, () => Array(MAP).fill(null)), keepHitT: -9,
     selected: new Set(), over: null, wx: { i: 0, t: 0, dur: chapter.sandbox ? 25 : 75 }, stats: { killed: 0, lost: 0, built: 0, recruited: 0, combined: 0, upgraded: 0 }, log: { builds: {}, units: {}, nights: [] }, wall0: Date.now() };
   addBuilding("keep", chapter.keepAt[0], chapter.keepAt[1], true);
@@ -1483,18 +1484,70 @@ function upgradeBlock(b) {
 }
 
 /* ---------- sound hooks ----------
-   The game ships silent for now. Every sound event calls sfx(name). To add audio, drop a file in
+   Every sound event calls sfx(name); a built-in synth kit (SYNTH below) voices them. To use recorded audio instead, drop a file in
    assets/sfx/ and list it in SFX_FILES, e.g.  build_complete: "assets/sfx/build_complete.ogg".
    Events: build_start build_complete upgrade_start upgrade_complete recruit hit_melee hit_building
    arrow_loose death_soldier death_yokai building_destroyed keep_falls night_falls dawn victory
    defeat ui_tap tap. Repeats of the same sound inside 70 ms are skipped so a melee doesn't stack. */
 const SFX_FILES = {};
 const SFX_CACHE = {}, SFX_LAST = {};
-function sfx(name) {
-  const src = SFX_FILES[name]; if (!src) return;
-  const now = performance.now(); if (now - (SFX_LAST[name] || 0) < 70) return; SFX_LAST[name] = now;
-  try { const a = (SFX_CACHE[name] ||= new Audio(src)).cloneNode(); a.volume = 0.7; a.play().catch(() => {}); } catch (e) {}
+// Synthesised kit (Web Audio, no files): taiko, plucked string, temple bell and wood, tuned to the miyako-bushi scale on D.
+const SND = { on: (() => { try { return localStorage.getItem("sengoku.sound") !== "off"; } catch (e) { return true; } })(), ctx: null, bus: null, noise: null };
+function actx() {
+  if (!SND.ctx) {
+    const C = window.AudioContext || window.webkitAudioContext; if (!C) return null;
+    const c = SND.ctx = new C(), comp = c.createDynamicsCompressor(); SND.bus = c.createGain(); SND.bus.gain.value = .55; SND.bus.connect(comp); comp.connect(c.destination);
+    const nb = SND.noise = c.createBuffer(1, c.sampleRate * 2, c.sampleRate), d = nb.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  }
+  if (SND.ctx.state === "suspended") SND.ctx.resume().catch(() => {});
+  return SND.ctx;
 }
+addEventListener("pointerdown", () => { if (SND.on) actx(); }, { passive: true });   // browsers only start audio from a gesture
+function envG(c, at, a, peak, dec) { const g = c.createGain(); g.gain.setValueAtTime(.0001, at); g.gain.exponentialRampToValueAtTime(peak, at + a); g.gain.exponentialRampToValueAtTime(.0001, at + a + dec); g.connect(SND.bus); return g; }
+function tone(c, { f, f2, type = "sine", t = 0, a = .004, dec = .3, vol = .5 }) {
+  const at = c.currentTime + t, o = c.createOscillator(); o.type = type; o.frequency.setValueAtTime(f, at); if (f2) o.frequency.exponentialRampToValueAtTime(f2, at + a + dec);
+  o.connect(envG(c, at, a, vol, dec)); o.start(at); o.stop(at + a + dec + .05);
+}
+function hiss(c, { t = 0, a = .002, dec = .15, vol = .5, type = "bandpass", f = 1200, f2, q = 1 }) {
+  const at = c.currentTime + t, s = c.createBufferSource(), fl = c.createBiquadFilter(); s.buffer = SND.noise; fl.type = type; fl.frequency.setValueAtTime(f, at); if (f2) fl.frequency.exponentialRampToValueAtTime(f2, at + a + dec); fl.Q.value = q;
+  s.connect(fl); fl.connect(envG(c, at, a, vol, dec)); s.start(at, Math.random() * .5); s.stop(at + a + dec + .05);
+}
+const taiko = (c, t = 0, v = 1) => { tone(c, { f: 115, f2: 52, t, dec: .45, vol: .9 * v }); hiss(c, { t, f: 200, dec: .12, vol: .5 * v, type: "lowpass" }); hiss(c, { t, f: 2400, dec: .03, vol: .1 * v }); };
+const bell = (c, f, t = 0, v = 1) => { tone(c, { f, t, dec: 1.6, vol: .2 * v }); tone(c, { f: f * 2.76, t, dec: .7, vol: .07 * v }); tone(c, { f: f * 5.4, t, dec: .3, vol: .035 * v }); };
+const pluck = (c, f, t = 0, v = 1) => { tone(c, { f, type: "triangle", t, a: .002, dec: .35, vol: .24 * v }); tone(c, { f: f * 2, type: "sawtooth", t, a: .002, dec: .07, vol: .05 * v }); };
+const wood = (c, t = 0, v = 1) => { hiss(c, { t, f: 1500, q: 5, dec: .05, vol: .5 * v }); tone(c, { t, f: 540, f2: 500, dec: .05, vol: .1 * v }); };
+const PENTA = [293.7, 311.1, 392, 440, 466.2, 587.3, 622.3, 784];
+const SYNTH = {
+  hit_melee: c => { hiss(c, { f: 800 + Math.random() * 600, q: 2, dec: .07, vol: .5 }); tone(c, { f: 160, f2: 70, dec: .09, vol: .32 }); },
+  hit_building: c => { hiss(c, { f: 480, q: 1.5, dec: .12, vol: .55 }); tone(c, { f: 90, f2: 50, dec: .15, vol: .42 }); },
+  arrow_loose: c => { tone(c, { f: 230, f2: 185, type: "triangle", dec: .16, vol: .2 }); hiss(c, { t: .01, f: 3200, f2: 1100, q: .8, dec: .18, vol: .1 }); },
+  gun_shot: c => { hiss(c, { f: 1800, q: .6, dec: .05, vol: .7, type: "highpass" }); hiss(c, { f: 420, dec: .4, vol: .65, type: "lowpass" }); tone(c, { f: 85, f2: 40, dec: .3, vol: .45 }); },
+  death_soldier: c => { tone(c, { f: 180, f2: 90, type: "triangle", dec: .35, vol: .18 }); hiss(c, { f: 300, dec: .22, vol: .22, type: "lowpass" }); },
+  death_yokai: c => { tone(c, { f: 740, f2: 180, a: .02, dec: .7, vol: .15 }); tone(c, { f: 748, f2: 186, a: .02, dec: .7, vol: .1 }); },
+  recruit: c => taiko(c, 0, .55),
+  combine: c => { hiss(c, { f: 700, f2: 1400, a: .2, dec: .12, vol: .12 }); taiko(c, .3, .9); taiko(c, .44, 1); [0, 2, 3, 5].forEach((k, i) => pluck(c, PENTA[k], .52 + i * .07, .9)); bell(c, PENTA[5], .84, .8); },
+  build_start: c => { wood(c, 0); wood(c, .13, .8); },
+  build_complete: c => { taiko(c, 0, .7); bell(c, PENTA[2], .08); },
+  upgrade_start: c => { wood(c, 0); wood(c, .12, .8); wood(c, .24, .7); },
+  upgrade_complete: c => { taiko(c, 0, .8); [2, 3, 5].forEach((k, i) => bell(c, PENTA[k], .08 + i * .11, .8)); },
+  ui_tap: c => tone(c, { f: 880, f2: 700, dec: .04, vol: .07, type: "triangle" }),
+  tap: c => tone(c, { f: 660, f2: 560, dec: .04, vol: .06, type: "triangle" }),
+  night_falls: c => { bell(c, 146.8, 0, 1.3); tone(c, { f: 73.4, a: .4, dec: 2.2, vol: .16 }); },
+  dawn: c => [0, 2, 3, 5, 7].forEach((k, i) => pluck(c, PENTA[k], i * .09, .7)),
+  building_destroyed: c => { hiss(c, { f: 650, f2: 150, dec: .8, vol: .55, type: "lowpass" }); tone(c, { f: 70, f2: 35, dec: .6, vol: .45 }); },
+  keep_falls: c => { hiss(c, { f: 800, f2: 100, dec: 1.4, vol: .75, type: "lowpass" }); tone(c, { f: 60, f2: 28, dec: 1.2, vol: .55 }); bell(c, 110, .3, 1.2); },
+  victory: c => { [0, .2, .4].forEach((t, i) => taiko(c, t, .7 + i * .15)); [0, 2, 3, 5, 7].forEach((k, i) => bell(c, PENTA[k], .6 + i * .12, .8)); },
+  defeat: c => { [5, 3, 2, 0].forEach((k, i) => pluck(c, PENTA[k] / 2, i * .22, .8)); bell(c, 110, .9, 1.2); },
+};
+function sfx(name) {
+  if (!SND.on) return;
+  const now = performance.now(); if (now - (SFX_LAST[name] || 0) < 70) return; SFX_LAST[name] = now;
+  const src = SFX_FILES[name];
+  if (src) { try { const a = (SFX_CACHE[name] ||= new Audio(src)).cloneNode(); a.volume = 0.7; a.play().catch(() => {}); } catch (e) {} return; }
+  const c = SYNTH[name] && SND.ctx && actx(); if (!c || c.state !== "running") return;
+  try { SYNTH[name](c); } catch (e) {}
+}
+function setSound(on) { SND.on = on; try { localStorage.setItem("sengoku.sound", on ? "on" : "off"); } catch (e) {} if (on) actx(); const b = document.getElementById("soundBtn"); if (b) b.textContent = "Sound: " + (on ? "On" : "Off"); }
 
 /* ---------- commands (UI and tests both go through these) ---------- */
 const CMD = {
@@ -1557,7 +1610,7 @@ const CMD = {
         m.hp = hp; if (art) m.arts = art;   // keep each cavalry rider's design inside the formation
         if (ids.add) ids.add(m.id);
         addDecal(p.x, p.y, .8); S.fx.push({ kind: "form", x: p.x, y: p.y, t: S.t, life: .7 });
-        made++; S.stats.combined++;
+        made++; S.stats.combined++; if (made === 1) sfx("combine");
       }
     }
     return made;
@@ -1895,7 +1948,7 @@ function step() {
   stepHero();
   if (heroUp() && S.hero.moving && S.t - (S.hero.trailT || 0) > .09) { S.hero.trailT = S.t; S.fx.push({ kind: "trail", x: S.hero.x, y: S.hero.y, t: S.t, life: .35, face: S.hero.face }); }
   separate();
-  stepProjectiles();
+  stepPending(); stepProjectiles();
   for (const u of S.units) if (!u.dead && !u.worker && u.hp <= 0) {
     u.dead = true; u.deadT = S.t; addDecal(u.x, u.y, u.team === "E" ? .9 : .7 * Math.sqrt(u.size)); sfx(u.team === "E" ? "death_yokai" : "death_soldier");
     if (u.team === "E") { S.stats.killed++; if (S.phase === "night" && !S.firstKill) { S.firstKill = true; hitStop = performance.now() + 110; } } else S.stats.lost += u.size;
@@ -2060,8 +2113,8 @@ function engage(u, d, t, isEnemy) {
       const mult = (t.type && UNITS[t.type] && d.bonus && d.bonus[UNITS[t.type].kind]) || 1;
       const ab = u.type === "archer" && archerBoost();
       const dmg = d.dmg * mult * SIZES[u.size || 1].dmg * (ab ? ab.dmg : 1) * (u.dmgMul || 1) * unitBoost(u.type).dmg * (BLADES.has(u.type) ? forgeOf("forge") : 1) * (u.type === "gunner" && tech("gun") ? 1.25 : 1) * ((u.size || 1) > 1 && tech("fan") ? 1.1 : 1);
-      if (d.ranged) fire({ x: u.x, y: u.y, z: 30 }, t, dmg, u.size);
-      else hit(t, dmg, u.type === "spear" ? "thrust" : "slash", u.face);
+      const strike = () => { if (u.dead || !alive(t)) return; if (d.ranged) fire({ x: u.x, y: u.y, z: 30 }, t, dmg, u.size, u.type === "gunner" ? "gun_shot" : "arrow_loose"); else hit(t, dmg, u.type === "spear" ? "thrust" : "slash", u.face); };
+      const wu = windup(u.type); if (wu > 0) S.pend.push({ at: S.t + wu, fn: strike }); else strike();
     }
   } else {
     const ap = aimPoint(t);
@@ -2127,10 +2180,15 @@ function hit(t, dmg, kind, face = 1) {
   const p = aimPoint(t);
   S.fx.push({ kind: kind || "spark", x: p.x, y: p.y, t: S.t, life: kind ? .26 : .35, rot: (rnd() - .5) * 1.2, v: Math.floor(rnd() * 3), face });
 }
-function fire(from, target, dmg, size = 1) {
-  const p = aimPoint(target), dist = hypot(p.x - from.x, p.y - from.y); sfx("arrow_loose");
+function fire(from, target, dmg, size = 1, snd = "arrow_loose") {
+  const p = aimPoint(target), dist = hypot(p.x - from.x, p.y - from.y); sfx(snd);
   S.projectiles.push({ x0: from.x, y0: from.y, z0: from.z, target, dmg, t0: S.t, dur: Math.max(.2, dist / 9), last: { ...p }, n: Math.min(3, size) });
 }
+// Rigged 3D figures: each attack plays one swing window [start, impact, end] of its clip at `rate`; damage waits for the impact frame.
+const SWING = { slash: [1.6, 2.04, 2.6, 2.0], chop: [1.62, 2.04, 2.5, 2.0], shoot: [.55, 1.4, 1.9, 2.6], gshoot: [.3, .9, 1.7, 1.5] };
+function swingOf(type) { return GLB3 && G3.rig[type] ? SWING[type === "gunner" ? "gshoot" : G3.atk[type] || "slash"] : null; }
+function windup(type) { const w = swingOf(type); return w ? (w[1] - w[0]) / w[3] : 0; }
+function stepPending() { if (!S.pend || !S.pend.length) return; const due = S.pend.filter(p => p.at <= S.t); S.pend = S.pend.filter(p => p.at > S.t); for (const p of due) p.fn(); }
 function stepProjectiles() {
   S.projectiles = S.projectiles.filter(p => {
     if (alive(p.target)) p.last = aimPoint(p.target);
@@ -4936,6 +4994,11 @@ function rigPlay(D, name, fade = .15, speed = 1) {   // crossfade a rigged figur
   const a = D.act && D.act[name]; if (!a || D.clip === name && a.isRunning()) return;
   const prev = D.clip && D.act[D.clip]; a.reset(); a.timeScale = speed; a.play(); if (prev && prev !== a) prev.crossFadeTo(a, fade, false); D.clip = name;
 }
+function rigSwing(D, w) {   // play one attack swing from its window start
+  const a = D.act && D.act[D.atk]; if (!a) return;
+  const prev = D.clip && D.act[D.clip]; a.reset(); a.time = w[0]; a.timeScale = w[3]; a.play();
+  if (prev && prev !== a) prev.crossFadeTo(a, .08, false); D.clip = D.atk; D.swEnd = w[2];
+}
 function glbBuilding(b) {
   if (!G3.ready || !G3.bld[b.type]) return null;
   const n = G3.bld[b.type][b.tier || 0], g = g3clone(n, Math.min(b.w, b.h) * 1.02); if (!g) return null;
@@ -4991,7 +5054,7 @@ function syncUnits(pose) {
     if (!pose) continue;
     const dx = u.x - e.px, dy = u.y - e.py, d = Math.hypot(dx, dy); e.px = u.x; e.py = u.y;
     e.mv = d > .004 ? 1 : 0;
-    const tg = u.target && !u.target.dead ? u.target : null, atk = S.t - (u.atkT ?? -9) < .3;
+    const tg = u.target && !u.target.dead ? u.target : null, atk = S.t - (u.atkT ?? -9) < .3 + windup(u.type);
     if (atk && tg) { const tx = tg.tx !== undefined ? tg.tx + tg.w / 2 : tg.x, ty = tg.ty !== undefined ? tg.ty + tg.h / 2 : tg.y; e.yaw = Math.atan2(tx - u.x, ty - u.y); }
     else if (d > .004) e.yaw = Math.atan2(dx, dy);
     e.phase += e.mv ? .75 : .17;
@@ -5008,8 +5071,11 @@ function syncUnits(pose) {
       if (D.armL) D.armL.rotation.x = (D.armL === D.weaponArm ? s * .12 : s * .45) - idle;
       if (atk && D.weaponArm) D.weaponArm.rotation.x = -1.1 + (S.t - u.atkT) * 3;   // thrust forward, recover
       if (D.mix) {   // rigged: the clips do the acting
-        const hitNow = S.t - (u.hitT ?? -9) < .35;
-        rigPlay(D, (atk && tg) || (u.working && !e.mv) ? D.atk : hitNow && D.clip !== D.atk ? "hit_to_body_01" : e.mv ? "walk" : (D.clip === D.atk || D.clip === "hit_to_body_01") && D.act[D.clip] && D.act[D.clip].isRunning() ? D.clip : "idle", .12, atk ? 2.2 : 1);
+        const hitNow = S.t - (u.hitT ?? -9) < .35, w = swingOf(u.type), A = D.act[D.atk];
+        if (w && (tg || u.working) && u.atkT !== undefined && u.atkT !== D.lastAtk && S.t - u.atkT < .3) { D.lastAtk = u.atkT; rigSwing(D, w); }
+        const swinging = w && D.clip === D.atk && A && A.isRunning() && A.time < D.swEnd;
+        if (w) { if (!swinging || e.mv) rigPlay(D, hitNow && D.clip !== D.atk ? "hit_to_body_01" : e.mv ? "walk" : D.clip === "hit_to_body_01" && D.act[D.clip].isRunning() ? D.clip : "idle", .15, 1); }
+        else rigPlay(D, (atk && tg) || (u.working && !e.mv) ? D.atk : hitNow && D.clip !== D.atk ? "hit_to_body_01" : e.mv ? "walk" : (D.clip === D.atk || D.clip === "hit_to_body_01") && D.act[D.clip] && D.act[D.clip].isRunning() ? D.clip : "idle", .12, atk ? 2.2 : 1);
       } else D.body.position.y = (e.mv ? Math.abs(Math.cos(ph)) * .06 : 0) + (D.float ? .25 + Math.sin(ph * .5) * .08 : 0);
       const hit = S.t - (u.hitT ?? -9) < .1;   // impact frame: the figure flashes paper-white for an instant
       if (hit !== !!D.flash) { D.flash = hit; f.traverse(o => { if (o.isMesh) { if (hit) { o.userData.m0 ||= o.material; o.material = R3.flashMat; } else o.material = o.userData.m0 || figMat(); } }); }
@@ -5680,6 +5746,7 @@ function pause(v) {
 document.addEventListener("visibilitychange", () => { if (document.hidden) pause(true); });
 window.addEventListener("blur", () => pause(true));
 $("resumeBtn").onclick = () => pause(false);
+$("soundBtn").onclick = () => setSound(!SND.on); $("soundBtn").textContent = "Sound: " + (SND.on ? "On" : "Off");
 $("quitBtn").onclick = () => { if (S && !S.over) playtest.run("quit"); paused = false; $("pauseScreen").classList.add("hidden"); showMenu(); };
 
 function centerOnKeep() {
@@ -5757,7 +5824,7 @@ document.getElementById("zoom").addEventListener("click", e => {
 });
 
 // test/debug hook (the game never uses it)
-window.__sengoku = { TEST_CFG, TEST_FLAG, playtest, RULES, queued, lockText, stepTraining, get S() { return S; }, get CH() { return CH; }, get tut() { return tut; }, CMD, addUnit, ASSETS, IMG, step, start, HERO, heroLevel, palAt, newWorld, canPlace, popCap, popUsed,
+window.__sengoku = { SND, SYNTH, TEST_CFG, TEST_FLAG, playtest, RULES, queued, lockText, stepTraining, get S() { return S; }, get CH() { return CH; }, get tut() { return tut; }, CMD, addUnit, ASSETS, IMG, step, start, HERO, heroLevel, palAt, newWorld, canPlace, popCap, popUsed,
   incomeRate, unlockedUnits, rangeOf, costOf, frameFor, zoomStep, zoomLevels, wxNow, drawMini, ANIM, SANDBOX, CHAPTERS, UNITS, BUILDINGS, SIZES, cam, ui, onTap, toScreen, iso, hitTarget, findPath, progress, tutorialTick, planNight,
   G3, setRunning(v) { running = v; } };
 }
