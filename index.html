@@ -4265,7 +4265,7 @@ function drawGoldFog(na) {
   // cut the explored land out with a lobed (cloud-edged) boundary
   const F = fogGeometry(T), lobes = F.lobes;
   g.globalCompositeOperation = "destination-out"; g.fillStyle = "#000";
-  const ell = (x, y, rad) => { const q = iso(x, y), sp = toScreen(q.X, q.Y), rx = rad * TW / Math.SQRT2 * cam.z; g.beginPath(); g.ellipse(sp.x, sp.y, rx, rx * TH / TW, 0, 0, 7); g.fill(); };
+  const ell = (x, y, rad) => { if (rad <= 0) return; const q = iso(x, y), sp = toScreen(q.X, q.Y), rx = rad * TW / Math.SQRT2 * cam.z; g.beginPath(); g.ellipse(sp.x, sp.y, rx, rx * TH / TW, 0, 0, 7); g.fill(); };
   for (const t of T) ell(t.x, t.y, t.r - .5);
   for (const l of lobes) ell(l.x, l.y, l.r);
   // off-map is always cloud: paint fog back into the cut wherever it falls outside the map diamond
@@ -4280,7 +4280,7 @@ function drawGoldFog(na) {
     ctx.save(); ctx.fillStyle = p2;
     for (const c of fresh) { const a = (S.t - c.t) / 1.8;
       for (let i = 0; i < 9; i++) { const ang = i / 9 * Math.PI * 2 + c.x * 1.7, d = c.R * (.25 + a * 1.05) * (.8 + ((i * 37) % 7) / 18), rr = c.R * (.62 - a * .25) * (.75 + ((i * 53) % 5) / 10);
-        const q = iso(c.x + Math.cos(ang) * d, c.y + Math.sin(ang) * d), sp = toScreen(q.X, q.Y - a * 10), rx = rr * TW / Math.SQRT2 * cam.z;
+        const q = iso(c.x + Math.cos(ang) * d, c.y + Math.sin(ang) * d), sp = toScreen(q.X, q.Y - a * 10), rx = Math.max(.1, rr * TW / Math.SQRT2 * cam.z);
         ctx.globalAlpha = (1 - a) ** 1.7 * .95; ctx.beginPath(); ctx.ellipse(sp.x, sp.y, rx, rx * TH / TW, 0, 0, 7); ctx.fill(); } }
     ctx.restore(); }
   // ink outline of the cloud edge: lobe arcs that face outward and aren't inside explored land
