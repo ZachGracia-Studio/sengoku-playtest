@@ -4891,14 +4891,15 @@ const G3 = { ready: false, src: {}, grad: null,
     bale: ["hay", .9], lm_shrine: ["hokora", 1.4], lm_ruin: ["ruin_wall", 1.8], lm_lantern: ["stone_lantern", 1.5], lm_farm: ["veg_field", 1.9],
     sp_stream: ["waterfall", 2.6], sp_outcrop: ["cliff_block", 2.6], sp_hill: ["hill", 2.8], sp_bamboo: ["bamboo", 1.2, "h", 2.4], sp_boulders: ["bank_rocks", 2.4], sp_pond: ["pond", 2.6] },
   field: ["paddy_young", "paddy_young", "paddy_young", "paddy_ripe"],
-  rig: { spear: "spear_rig", archer: "arc_rig", samurai: "sam_rig", monk: "mnk_rig", ninja: "nin_rig" },
-  atk: { spear: "slash", archer: "shoot" },   // attack clip per unit type (default slash)   // rigged + animated sculpts (idle, walk, slash, hit_to_body_01, fall); others keep the bob
+  rigE: { spear: { 3: "spear_k_rig", 9: "spear_t_rig" }, samurai: { 3: "sam_k_rig" } },   // rigged formation evolutions (kumi 3, tai 9)
+  rig: { gunner: "gun_rig", spear: "spear_rig", archer: "arc_rig", samurai: "sam_rig", monk: "mnk_rig", ninja: "nin_rig", farmer: "wk_rig", cutter: "wk_rig", builder: "wk_rig" },
+  atk: { gunner: "shoot", spear: "slash", archer: "shoot", farmer: "chop", cutter: "chop", builder: "chop" },   // attack clip per unit type (default slash)   // rigged + animated sculpts (idle, walk, slash, hit_to_body_01, fall); others keep the bob
   // board dressing: [model, size in tiles, "h" = size is a height]
   dress: { boat: [.95], reeds: [.8], bush: [.7], stump: [.45], log: [.8], cherry: [2.0, "h"], bare_tree: [1.9, "h"], stone_lantern: [.9, "h"], well: [.95], cart: [1.1], firewood: [.75], jizo: [.6, "h"], stall: [1.3], scarecrow: [1.1, "h"] } };
 async function loadGLB3() {
   const { GLTFLoader } = await import("./vendor/jsm/loaders/GLTFLoader.js"); const L = new GLTFLoader();
   G3.skel = await import("./vendor/jsm/utils/SkeletonUtils.js");
-  const names = new Set([...Object.values(G3.bld).flat(), ...Object.values(G3.fig), ...Object.values(G3.prop).map(p => p[0]), ...G3.field, ...Object.keys(G3.dress), "bridge", ...Object.values(G3.rig), ...["spear", "arc", "sam"].flatMap(n => [n + "_k", n + "_t"])]);
+  const names = new Set([...Object.values(G3.bld).flat(), ...Object.values(G3.fig), ...Object.values(G3.prop).map(p => p[0]), ...G3.field, ...Object.keys(G3.dress), "bridge", ...Object.values(G3.rig), ...Object.values(G3.rigE).flatMap(o => Object.values(o)), ...["spear", "arc", "sam"].flatMap(n => [n + "_k", n + "_t"])]);
   G3.grad = new THREE.DataTexture(new Uint8Array([110, 185, 255]), 3, 1, THREE.RedFormat); G3.grad.minFilter = G3.grad.magFilter = THREE.NearestFilter; G3.grad.needsUpdate = true;
   await Promise.all([...names].map(n => L.loadAsync(`assets/3d/${n}.glb`).then(g => {
     g.scene.traverse(o => { if (o.isMesh) { const m = o.material; o.material = new THREE.MeshToonMaterial({ map: m.map || null, color: m.map ? 0xffffff : (m.color || 0xcccccc), gradientMap: G3.grad }); if (o.material.map) o.material.map.colorSpace = THREE.NoColorSpace; } });
@@ -4927,7 +4928,8 @@ let _wv = null;
 function carryWeapon(D, dt) {   // hand position + an upright spear, levelled forward on the thrust
   const W = D.body.userData.wpn; if (!W) return; _wv ||= new THREE.Vector3();
   W.mesh.parent.worldToLocal(W.hand.getWorldPosition(_wv)); W.mesh.position.copy(_wv).add(W.off);
-  const want = D.clip === D.atk ? (W.mesh.name.includes("bow") ? 0 : 1.35) : D.clip === "walk" ? .12 : D.clip === "hit_to_body_01" ? -.25 : D.clip === "fall" ? 1.4 : 0;
+  const fixed = /bow|gun|blade/.test(W.mesh.name);   // bows and rifles keep their held angle
+  const want = fixed ? 0 : D.clip === D.atk ? 1.35 : D.clip === "walk" ? .12 : D.clip === "hit_to_body_01" ? -.25 : D.clip === "fall" ? 1.4 : 0;
   W.tilt += (want - W.tilt) * Math.min(1, dt * 12); W.mesh.rotation.set(W.tilt, 0, 0);
 }
 function rigPlay(D, name, fade = .15, speed = 1) {   // crossfade a rigged figure to a clip
@@ -4952,10 +4954,10 @@ function sashimono(h, gold) {
 function glbFigure(type, size = 1) {
   if (!G3.ready) return null;
   const E = EVO[size], base = G3.fig[type], evo = E && base && G3.src[base + E.sfx] ? base + E.sfx : null, H = (G3.figH[type] || 1.45) / FIG_SCALE;
-  const rig = !E && G3.rig[type] && G3.src[G3.rig[type]] ? G3.rig[type] : null;
-  const body = (rig && g3clone(rig, H, true)) || (evo && g3clone(evo, H * E.s * 1.05, true)) || (base && g3clone(base, H * (E ? E.s : 1), true)); if (!body) return null;
+  const rigN = E ? (G3.rigE[type] || {})[size] : G3.rig[type], rig = rigN && G3.src[rigN] ? rigN : null;
+  const body = (rig && g3clone(rig, H * (E ? E.s * 1.05 : 1), true)) || (evo && g3clone(evo, H * E.s * 1.05, true)) || (base && g3clone(base, H * (E ? E.s : 1), true)); if (!body) return null;
   const root = new THREE.Group(); root.add(body); let flag = null;
-  if (E && !evo && !G3.figH[type]) {   // interim evolution: a back banner on the base sculpt
+  if (E && !evo && !rig && !G3.figH[type]) {   // interim evolution: a back banner on the base sculpt
     const b = sashimono(H * E.s * .95, size === 9); b.position.set(0, H * E.s * .28, -.2); root.add(b); flag = b.userData.flag; }
   if (E) { const ring = new THREE.Mesh(new THREE.RingGeometry(.34, .42, 24), new THREE.MeshBasicMaterial({ color: E.ring, transparent: true, opacity: .8 })); ring.rotation.x = -Math.PI / 2; ring.position.y = .02 / FIG_SCALE; ring.scale.setScalar(1 / FIG_SCALE * (size === 9 ? 1.25 : 1)); root.add(ring); }
   root.userData = { body, legs: [], armR: null, armL: null, weaponArm: null, scale: 1, float: type === "ghost" || type === "lantern", glb: true, flag, mix: body.userData.mix, act: body.userData.act };
@@ -5007,7 +5009,7 @@ function syncUnits(pose) {
       if (atk && D.weaponArm) D.weaponArm.rotation.x = -1.1 + (S.t - u.atkT) * 3;   // thrust forward, recover
       if (D.mix) {   // rigged: the clips do the acting
         const hitNow = S.t - (u.hitT ?? -9) < .35;
-        rigPlay(D, atk && tg ? D.atk : hitNow && D.clip !== D.atk ? "hit_to_body_01" : e.mv ? "walk" : (D.clip === D.atk || D.clip === "hit_to_body_01") && D.act[D.clip] && D.act[D.clip].isRunning() ? D.clip : "idle", .12, atk ? 2.2 : 1);
+        rigPlay(D, (atk && tg) || (u.working && !e.mv) ? D.atk : hitNow && D.clip !== D.atk ? "hit_to_body_01" : e.mv ? "walk" : (D.clip === D.atk || D.clip === "hit_to_body_01") && D.act[D.clip] && D.act[D.clip].isRunning() ? D.clip : "idle", .12, atk ? 2.2 : 1);
       } else D.body.position.y = (e.mv ? Math.abs(Math.cos(ph)) * .06 : 0) + (D.float ? .25 + Math.sin(ph * .5) * .08 : 0);
       const hit = S.t - (u.hitT ?? -9) < .1;   // impact frame: the figure flashes paper-white for an instant
       if (hit !== !!D.flash) { D.flash = hit; f.traverse(o => { if (o.isMesh) { if (hit) { o.userData.m0 ||= o.material; o.material = R3.flashMat; } else o.material = o.userData.m0 || figMat(); } }); }

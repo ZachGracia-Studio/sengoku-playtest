@@ -17,19 +17,20 @@ bpy.context.view_layer.objects.active = o; o.select_set(True)
 bpy.ops.object.mode_set(mode="EDIT"); bpy.ops.mesh.select_all(action="DESELECT"); bpy.ops.object.mode_set(mode="OBJECT")
 n = 0
 arm = [m for m in bpy.data.objects if m.type == "ARMATURE"][0]
-hand = arm.matrix_world @ arm.data.bones[f"mixamorig:{SIDE}Hand"].head_local
+SIDES = ["Right", "Left"] if SIDE == "Both" else [SIDE]   # "Both": a two-handed weapon, carried at the right hand
+hands = {sd: arm.matrix_world @ arm.data.bones[f"mixamorig:{sd}Hand"].head_local for sd in SIDES}
 names = {g.index: g.name for g in o.vertex_groups}
 for v in o.data.vertices:
     p = mw @ v.co
     in_line = ((p.x - X) ** 2 + (p.y - Y) ** 2) ** .5 < R and not (ZL <= p.z <= ZH)
     top = max(v.groups, key=lambda g: g.weight) if v.groups else None
-    hand_far = top is not None and f"{SIDE}Hand" in names[top.group] and (p - hand).length > .08   # the auto-rig skins the shaft to fingers
+    hand_far = top is not None and any(f"{sd}Hand" in names[top.group] and (p - hands[sd]).length > .08 for sd in SIDES)   # the auto-rig skins the shaft to fingers
     v.select = in_line or hand_far
     n += v.select
 bpy.ops.object.mode_set(mode="EDIT"); bpy.ops.mesh.select_mode(type="VERT")
 bpy.ops.mesh.separate(type="SELECTED"); bpy.ops.object.mode_set(mode="OBJECT")
 w = [m for m in bpy.context.selected_objects if m is not o and m.type == "MESH"][0]
-w.name = w.data.name = "weapon" + ("_" + LABEL if LABEL else "") + ("_L" if SIDE == "Left" else "_R")
+w.name = w.data.name = "weapon" + ("_" + LABEL if LABEL else "") + ("_L" if SIDE == "Left" else "_R")   # Both -> _R
 w.vertex_groups.clear()
 for md in list(w.modifiers): w.modifiers.remove(md)
 wm = w.matrix_world.copy(); w.parent = None; w.matrix_world = wm
