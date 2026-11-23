@@ -108,3 +108,9 @@ Kittl concepts (2048 or 832x1248 PNG) and Tripo task pages. Tripo: https://studi
 - Known issue: the spear is skinned to the hand and pivots (points down in idle/walk). Fix options: segment the weapon in Tripo and attach it to the hand bone in code, or re-pose before rigging.
 - Regenerated and wired: pond (sp_pond), young paddy (fields), watermill (river bank), torii (before shrines), hay rack (village).
 - `tools/build_playable.py` builds the hosted playable with the models packed into 3 base64 bundles + index (was 93 files).
+
+## 2026-11-23 — rig rollout complete
+- Rigged + animated (idle, walk, attack, hit, fall): spear, archer, samurai, monk, ninja, gunner, worker; evolved spear_k/t, arc_k/t, sam_k/t.
+- Weapons split to carried meshes (`bl_split_weapon.py`); back banners rebound rigidly (`bl_rigid_banner.py`, `BONE=` env — Hips for captains whose AI attack clips lunge hard, Spine2 otherwise).
+- Known minor: archer captain's lower bow limb separates briefly mid-draw; gunner rifle reads thin; ninja has no split weapon.
+- Tripo balance after rollout: 19,516 credits (no cash spent).
