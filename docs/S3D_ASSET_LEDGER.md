@@ -91,3 +91,9 @@ Kittl concepts (2048 or 832x1248 PNG) and Tripo task pages. Tripo: https://studi
 - Yūrei ghost, the most common enemy (picked B): `cmwo370zg000100iltkc75nan` (hunched, ragged hem, hitodama flame). Alt A (taller, no flame): `cmwo370aj000000ilic7xrsh5`.
 - Oni brute: `cmwnqhy06000300ilzdxfcc7w`.
 - Yūrei: built in Blender as a first pass (`tools/bl_yurei.py` → `gh_front|side.webp`, baked with `PAL_EXTRA="182,200,218;214,226,236" LY=.45 CROPB=1`, front = rot 90, side = rot 0; the extra pale blues are for the tail and hands). Replace with a modelled version from concept B when credits refresh if it needs more finish. The brute still shows old 2D art.
+
+## 23 Nov — 3D board kit (GLB mode, `?r=3d&glb=1`)
+- 36 board-kit sculpts generated; 33 exported, decimated (1–3k faces, 512px textures) into `assets/3d/`. Task ids: `docs/S3D_KIT_TRIPO_TASKS.txt`.
+- Wired: diorama base (earth + stone slab), blue river channel, sculpted bridge, reeds on banks, brush/stumps/logs/cherry/bare trees, village props round the keep (well, cart, firewood, jizo, stall, lantern), scarecrow per farm, boat, brute sculpt. Dressing hides when built over.
+- Still open: pond, paddy_young, watermill (stuck generating); torii, hay (failed). Tripo yūrei exported (`yurei.glb`) but the Blender `gh.glb` stays in use. Units not rigged yet.
+- Test flag: `?fog=0` hides the gold fog.
