@@ -119,3 +119,9 @@ Kittl concepts (2048 or 832x1248 PNG) and Tripo task pages. Tripo: https://studi
 - Samurai veteran banner rebound to Hips (stays upright through the slash).
 - Combat sync: rigged figures play one swing window per attack (SWING table: melee preset impact 2.04s, archers 1.4s, gunner 0.9s); damage waits for the impact frame via S.pend (melee ~0.22s windup, measured in game).
 - Sound: synthesised Web Audio kit (taiko, plucked string, temple bell, wood; miyako-bushi scale on D) voices every sfx() event, plus new gun_shot and combine. Sound On/Off toggle on the pause screen (localStorage sengoku.sound).
+
+## 2026-11-23 — enemies rigged
+- Rigged + animated (idle, walk, slash, hit, fall): oni (6993c58c), brute (85e77bb8), kappa (fbe9a01c), tengu (c2b7e582), Shuten-doji boss (3b00053d-1b5f-4ec2-a275-97b24501c2ce) → oni_rig, brute_rig, kap_rig, ten_rig, shuten_rig.
+- Oni, brute and boss use the slower "heavy" swing (windup ~0.45s); everything else as before.
+- Non-humanoid yokai keep their sculpts with hand-made motion (yokaiMotion): lantern floats and swings, umbrella hops with squash, yurei drifts and leans, kitsune trots; all non-rigged enemies lunge on attack.
+- Cost: 5 × (35 retopo + 20 rig) = 275 Tripo credits; balance 19,240.

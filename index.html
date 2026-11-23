@@ -2185,8 +2185,8 @@ function fire(from, target, dmg, size = 1, snd = "arrow_loose") {
   S.projectiles.push({ x0: from.x, y0: from.y, z0: from.z, target, dmg, t0: S.t, dur: Math.max(.2, dist / 9), last: { ...p }, n: Math.min(3, size) });
 }
 // Rigged 3D figures: each attack plays one swing window [start, impact, end] of its clip at `rate`; damage waits for the impact frame.
-const SWING = { slash: [1.6, 2.04, 2.6, 2.0], chop: [1.62, 2.04, 2.5, 2.0], shoot: [.55, 1.4, 1.9, 2.6], gshoot: [.3, .9, 1.7, 1.5] };
-function swingOf(type) { return GLB3 && G3.rig[type] ? SWING[type === "gunner" ? "gshoot" : G3.atk[type] || "slash"] : null; }
+const SWING = { heavy: [1.4, 2.04, 2.8, 1.4], slash: [1.6, 2.04, 2.6, 2.0], chop: [1.62, 2.04, 2.5, 2.0], shoot: [.55, 1.4, 1.9, 2.6], gshoot: [.3, .9, 1.7, 1.5] };
+function swingOf(type) { return GLB3 && G3.rig[type] ? SWING[type === "gunner" ? "gshoot" : /^(oni|brute|gashadokuro)$/.test(type) ? "heavy" : G3.atk[type] || "slash"] : null; }
 function windup(type) { const w = swingOf(type); return w ? (w[1] - w[0]) / w[3] : 0; }
 function stepPending() { if (!S.pend || !S.pend.length) return; const due = S.pend.filter(p => p.at <= S.t); S.pend = S.pend.filter(p => p.at > S.t); for (const p of due) p.fn(); }
 function stepProjectiles() {
@@ -4950,7 +4950,7 @@ const G3 = { ready: false, src: {}, grad: null,
     sp_stream: ["waterfall", 2.6], sp_outcrop: ["cliff_block", 2.6], sp_hill: ["hill", 2.8], sp_bamboo: ["bamboo", 1.2, "h", 2.4], sp_boulders: ["bank_rocks", 2.4], sp_pond: ["pond", 2.6] },
   field: ["paddy_young", "paddy_young", "paddy_young", "paddy_ripe"],
   rigE: { spear: { 3: "spear_k_rig", 9: "spear_t_rig" }, samurai: { 3: "sam_k_rig", 9: "sam_t_rig" }, archer: { 3: "arc_k_rig", 9: "arc_t_rig" } },   // rigged formation evolutions (kumi 3, tai 9)
-  rig: { gunner: "gun_rig", spear: "spear_rig", archer: "arc_rig", samurai: "sam_rig", monk: "mnk_rig", ninja: "nin_rig", farmer: "wk_rig", cutter: "wk_rig", builder: "wk_rig" },
+  rig: { oni: "oni_rig", brute: "brute_rig", gashadokuro: "shuten_rig", kappa: "kap_rig", tengu: "ten_rig", gunner: "gun_rig", spear: "spear_rig", archer: "arc_rig", samurai: "sam_rig", monk: "mnk_rig", ninja: "nin_rig", farmer: "wk_rig", cutter: "wk_rig", builder: "wk_rig" },
   atk: { gunner: "shoot", spear: "slash", archer: "shoot", farmer: "chop", cutter: "chop", builder: "chop" },   // attack clip per unit type (default slash)   // rigged + animated sculpts (idle, walk, slash, hit_to_body_01, fall); others keep the bob
   // board dressing: [model, size in tiles, "h" = size is a height]
   dress: { boat: [.95], reeds: [.8], bush: [.7], stump: [.45], log: [.8], cherry: [2.0, "h"], bare_tree: [1.9, "h"], stone_lantern: [.9, "h"], well: [.95], cart: [1.1], firewood: [.75], jizo: [.6, "h"], stall: [1.3], scarecrow: [1.1, "h"] } };
@@ -4993,6 +4993,21 @@ function carryWeapon(D, dt) {   // hand position + an upright spear, levelled fo
 function rigPlay(D, name, fade = .15, speed = 1) {   // crossfade a rigged figure to a clip
   const a = D.act && D.act[name]; if (!a || D.clip === name && a.isRunning()) return;
   const prev = D.clip && D.act[D.clip]; a.reset(); a.timeScale = speed; a.play(); if (prev && prev !== a) prev.crossFadeTo(a, fade, false); D.clip = name;
+}
+// Hand-made motion for figures without a skeleton: each yokai moves in its own way, and every attack lunges.
+function yokaiMotion(D, u, e, ph) {
+  const B = D.body; D.s0 ||= B.scale.clone(); D.r0 ||= { x: B.rotation.x, z: B.rotation.z };
+  const t = S.t + u.id * .71, mv = e.mv, la = S.t - (u.atkT ?? -9), lunge = la < .32 ? Math.sin(la / .32 * Math.PI) : 0;
+  let y = 0, rx = 0, rz = 0, sq = 1, z = lunge * .28;
+  switch (u.type) {
+    case "lantern": y = .3 + Math.sin(t * 2.1) * .09; rz = Math.sin(t * 1.7) * .14; rx = mv ? .18 : 0; sq = 1 + lunge * .12; break;   // a paper lantern swinging on no string
+    case "ghost": y = .25 + Math.sin(t * 1.4) * .1; rz = Math.sin(t * .9) * .08; rx = mv ? .3 : .05; z += lunge * .15; break;      // drifting, leaning into the glide
+    case "umbrella": { const h = Math.abs(Math.sin(t * (mv ? 6.5 : 2.2))); y = h * (mv ? .42 : .12); sq = h < .18 ? 1 - (.18 - h) * 1.6 : 1 + h * .06; rz = Math.sin(t * 3.25) * .1; break; }   // one-legged hop, squash on landing
+    case "kitsune": y = mv ? Math.abs(Math.sin(ph * 1.2)) * .07 : Math.sin(t * 1.8) * .015; rx = mv ? Math.sin(ph * 1.2) * .1 : 0; z += lunge * .25; break;   // quick trot, nose-down pounce
+    default: y = (mv ? Math.abs(Math.cos(ph)) * .06 : 0) + (D.float ? .25 + Math.sin(ph * .5) * .08 : 0); rx = lunge * .2;
+  }
+  B.position.y = y; B.position.z = z; B.rotation.x = D.r0.x + rx; B.rotation.z = D.r0.z + rz;
+  B.scale.set(D.s0.x * (2 - sq) ** .5, D.s0.y * sq, D.s0.z * (2 - sq) ** .5);
 }
 function rigSwing(D, w) {   // play one attack swing from its window start
   const a = D.act && D.act[D.atk]; if (!a) return;
@@ -5076,7 +5091,7 @@ function syncUnits(pose) {
         const swinging = w && D.clip === D.atk && A && A.isRunning() && A.time < D.swEnd;
         if (w) { if (!swinging || e.mv) rigPlay(D, hitNow && D.clip !== D.atk ? "hit_to_body_01" : e.mv ? "walk" : D.clip === "hit_to_body_01" && D.act[D.clip].isRunning() ? D.clip : "idle", .15, 1); }
         else rigPlay(D, (atk && tg) || (u.working && !e.mv) ? D.atk : hitNow && D.clip !== D.atk ? "hit_to_body_01" : e.mv ? "walk" : (D.clip === D.atk || D.clip === "hit_to_body_01") && D.act[D.clip] && D.act[D.clip].isRunning() ? D.clip : "idle", .12, atk ? 2.2 : 1);
-      } else D.body.position.y = (e.mv ? Math.abs(Math.cos(ph)) * .06 : 0) + (D.float ? .25 + Math.sin(ph * .5) * .08 : 0);
+      } else yokaiMotion(D, u, e, ph);
       const hit = S.t - (u.hitT ?? -9) < .1;   // impact frame: the figure flashes paper-white for an instant
       if (hit !== !!D.flash) { D.flash = hit; f.traverse(o => { if (o.isMesh) { if (hit) { o.userData.m0 ||= o.material; o.material = R3.flashMat; } else o.material = o.userData.m0 || figMat(); } }); }
       D.body.position.x = S.t - (u.hitT ?? -9) < .15 ? Math.sin(S.t * 90) * .04 : 0;
