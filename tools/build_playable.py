@@ -32,6 +32,14 @@ for root, _, files in os.walk(src_assets):
 for p in ["vendor/three.module.js", "vendor/jsm/loaders/GLTFLoader.js", "vendor/jsm/utils/BufferGeometryUtils.js", "vendor/jsm/utils/SkeletonUtils.js"]:
     os.makedirs(os.path.dirname(os.path.join(OUT, p)), exist_ok=True); shutil.copy2(os.path.join(REPO, p), os.path.join(OUT, p))
 # 3D bundles
+# audio: the host serves .txt, so each file ships as base64 text and the game decodes it
+import base64
+src_audio = os.path.join(REPO, "assets", "audio"); out_audio = os.path.join(OUT, "assets", "audio")
+shutil.rmtree(out_audio, ignore_errors=True)
+for root, _, files in os.walk(src_audio):
+    for f in files:
+        rel = os.path.relpath(os.path.join(root, f), src_audio); dst = os.path.join(out_audio, rel + ".txt")
+        os.makedirs(os.path.dirname(dst), exist_ok=True); open(dst, "w").write(base64.b64encode(open(os.path.join(root, f), "rb").read()).decode())
 d3 = os.path.join(OUT, "assets", "3d"); shutil.rmtree(d3, ignore_errors=True); os.makedirs(d3)
 index, buf, bi = {}, bytearray(), 0
 def flush():
@@ -55,6 +63,9 @@ body = body.replace("location.search", "__Q")
 old = "L.loadAsync(`assets/3d/${n}.glb`)"
 assert old in body, "loader line changed"
 body = body.replace(old, "glbBundle(n).then(b => L.parseAsync(b, \"assets/3d/\"))")
+old_a = 'function audioBytes(p) { return fetch(p).then(r => { if (!r.ok) throw new Error(p); return r.arrayBuffer(); }); }'
+assert old_a in body, "audioBytes hook missing"
+body = body.replace(old_a, 'function audioBytes(p) { return fetch(p + ".txt").then(r => { if (!r.ok) throw new Error(p); return r.text(); }).then(t => { const s = atob(t.trim()), a = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) a[i] = s.charCodeAt(i); return a.buffer; }); }')
 helper = """
 /* hosted build: the models come packed in base64 bundles with a byte-range index */
 const GLB_BUNDLES = {};

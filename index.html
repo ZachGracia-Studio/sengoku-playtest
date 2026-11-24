@@ -1435,7 +1435,8 @@ const advisor = {
     const m = { text, ...o }; if (o.urgent) this.queue.unshift(m); else this.queue.push(m);
   },
   show(m) {
-    this.cur = m; this.lastT = S.t; this.hideT = m.buttons ? 0 : S.t + Math.max(6, m.text.length / 14);
+    this.cur = m; this.lastT = S.t; this.hideT = m.buttons ? 0 : S.t + Math.max(6, m.text.length / 14, VO[m.key] ? 9 : 0);
+    if (m.key && VO[m.key]) playVoice(m.key);
     const a = $("advisor"), strip = S.phase === "night" && !m.buttons && !m.pic; a.classList.toggle("event", !!m.pic); a.classList.toggle("strip", strip); a.classList.remove("hidden");
     if (strip) this.hideT = S.t + Math.max(3.5, m.text.length / 22);
     $("advImg").src = ADV_FACE[m.face] || (m.urgent ? ADV_FACE.urgent : ADV_FACE.speaking);
@@ -1520,7 +1521,12 @@ function upgradeBlock(b) {
    Events: build_start build_complete upgrade_start upgrade_complete recruit hit_melee hit_building
    arrow_loose death_soldier death_yokai building_destroyed keep_falls night_falls dawn victory
    defeat ui_tap tap. Repeats of the same sound inside 70 ms are skipped so a melee doesn't stack. */
-const SFX_FILES = {};
+const SFX_FILES = { night_falls: ["night_falls_01.mp3", "night_falls_02.mp3"] };   // recorded sounds in assets/audio/; a list = random variations; anything not here uses the synth kit
+const AUDIO_DIR = "assets/audio/";
+// Music loops: len = the loop's exact length in seconds (the files are cut to loop seamlessly). Seasons without their own track fall back to spring.
+const MUSIC = { day_Spring: { src: "mus_day_spring.mp3", len: 69.0 }, night: { src: "mus_night.mp3", len: 118.0 } };
+// The Elder's voiced lines, by the advisor message key
+const VO = { welcome: "vo/adv_intro.mp3" };
 const SFX_CACHE = {}, SFX_LAST = {};
 // Synthesised kit (Web Audio, no files): taiko, plucked string, temple bell and wood, tuned to the miyako-bushi scale on D.
 const SND = { on: (() => { try { return localStorage.getItem("sengoku.sound") !== "off"; } catch (e) { return true; } })(), ctx: null, bus: null, noise: null };
@@ -1531,6 +1537,7 @@ function actx() {
     const nb = SND.noise = c.createBuffer(1, c.sampleRate * 2, c.sampleRate), d = nb.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
   }
   if (SND.ctx.state === "suspended") SND.ctx.resume().catch(() => {});
+  if (!SND.pre) { SND.pre = 1; Object.values(SFX_FILES).flat().forEach(abuf); Object.values(VO).forEach(abuf); }
   return SND.ctx;
 }
 addEventListener("pointerdown", () => { if (SND.on) actx(); }, { passive: true });   // browsers only start audio from a gesture
@@ -1571,15 +1578,51 @@ const SYNTH = {
   victory: c => { [0, .2, .4].forEach((t, i) => taiko(c, t, .7 + i * .15)); [0, 2, 3, 5, 7].forEach((k, i) => bell(c, PENTA[k], .6 + i * .12, .8)); },
   defeat: c => { [5, 3, 2, 0].forEach((k, i) => pluck(c, PENTA[k] / 2, i * .22, .8)); bell(c, 110, .9, 1.2); },
 };
+function audioBytes(p) { return fetch(p).then(r => { if (!r.ok) throw new Error(p); return r.arrayBuffer(); }); }
+const ABUF = {};
+function abuf(p) { return ABUF[p] ||= audioBytes(AUDIO_DIR + p).then(x => SND.ctx.decodeAudioData(x)).catch(() => null); }
+function playBuf(b, dest = SND.bus, vol = 1) { const c = SND.ctx, s = c.createBufferSource(), g = c.createGain(); s.buffer = b; g.gain.value = vol; s.connect(g); g.connect(dest); s.start(); return s; }
+// Music: one looping bed that crossfades between day (by season) and night, under everything else.
+const MUS = { cur: null, gain: null, vol: .5 };
+function leadIn(b) { const d = b.getChannelData(0), lim = Math.min(d.length, b.sampleRate * .2); let i = 0; while (i < lim && Math.abs(d[i]) < 1e-4) i++; return i / b.sampleRate; }   // skip the encoder's silent priming
+function stopMusic() { if (!MUS.cur) return; const c = SND.ctx, t = c.currentTime, o = MUS.cur; o.g.gain.cancelScheduledValues(t); o.g.gain.setValueAtTime(Math.max(.0001, o.g.gain.value), t); o.g.gain.exponentialRampToValueAtTime(.0001, t + 1); o.src.stop(t + 1.1); MUS.cur = null; }
+function musicTick() {
+  if (!SND.on || !SND.ctx || SND.ctx.state !== "running") return;
+  const c = SND.ctx; MUS.gain ||= (() => { const g = c.createGain(); g.gain.value = MUS.vol; g.connect(SND.bus); return g; })();
+  let k = S && running && S.phase === "night" ? "night" : "day_" + (S && running ? season().name : "Spring");
+  if (!MUSIC[k]) k = "day_Spring";
+  if (MUS.cur && MUS.cur.k === k) return;
+  if (MUS.loading === k) return; MUS.loading = k;
+  abuf(MUSIC[k].src).then(b => {
+    MUS.loading = null; if (!b || !SND.on) return;
+    const want = S && running && S.phase === "night" ? "night" : "day"; if (!k.startsWith(want)) return;   // phase moved on while it loaded
+    const t = c.currentTime, src = c.createBufferSource(), g = c.createGain(), off = leadIn(b);
+    src.buffer = b; src.loop = true; src.loopStart = off; src.loopEnd = off + MUSIC[k].len;
+    g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(1, t + 2.5); src.connect(g); g.connect(MUS.gain); src.start(t, off);
+    if (MUS.cur) { const o = MUS.cur; o.g.gain.cancelScheduledValues(t); o.g.gain.setValueAtTime(Math.max(.0001, o.g.gain.value), t); o.g.gain.exponentialRampToValueAtTime(.0001, t + 2.5); o.src.stop(t + 2.6); }
+    MUS.cur = { k, src, g };
+  });
+}
+// The Elder speaks: music ducks under his voice, then comes back.
+const VOICE = { cur: null };
+function playVoice(key) {
+  const p = VO[key]; if (!p || !SND.on || !SND.ctx || SND.ctx.state !== "running") return;
+  abuf(p).then(b => {
+    if (!b) return; const c = SND.ctx, t = c.currentTime;
+    try { VOICE.cur && VOICE.cur.stop(); } catch (e) {}
+    VOICE.cur = playBuf(b, SND.bus, 1);
+    if (MUS.gain) { MUS.gain.gain.cancelScheduledValues(t); MUS.gain.gain.setTargetAtTime(MUS.vol * .35, t, .12); MUS.gain.gain.setTargetAtTime(MUS.vol, t + b.duration, .5); }
+  });
+}
 function sfx(name) {
   if (!SND.on) return;
   const now = performance.now(); if (now - (SFX_LAST[name] || 0) < 70) return; SFX_LAST[name] = now;
   const src = SFX_FILES[name];
-  if (src) { try { const a = (SFX_CACHE[name] ||= new Audio(src)).cloneNode(); a.volume = 0.7; a.play().catch(() => {}); } catch (e) {} return; }
+  if (src) { const list = [].concat(src), c = SND.ctx && actx(); if (c && c.state === "running") abuf(list[Math.floor(Math.random() * list.length)]).then(b => b && playBuf(b, SND.bus, .9)); return; }
   const c = SYNTH[name] && SND.ctx && actx(); if (!c || c.state !== "running") return;
   try { SYNTH[name](c); } catch (e) {}
 }
-function setSound(on) { SND.on = on; try { localStorage.setItem("sengoku.sound", on ? "on" : "off"); } catch (e) {} if (on) actx(); const b = document.getElementById("soundBtn"); if (b) b.textContent = "Sound: " + (on ? "On" : "Off"); }
+function setSound(on) { SND.on = on; if (!on && SND.ctx) { stopMusic(); try { VOICE.cur && VOICE.cur.stop(); } catch (e) {} } try { localStorage.setItem("sengoku.sound", on ? "on" : "off"); } catch (e) {} if (on) actx(); const b = document.getElementById("soundBtn"); if (b) b.textContent = "Sound: " + (on ? "On" : "Off"); }
 
 /* ---------- commands (UI and tests both go through these) ---------- */
 const CMD = {
@@ -5840,6 +5883,7 @@ function safeRender() {   // a drawing error must never leave the canvas stuck i
 function frame(now) {
   requestAnimationFrame(frame);
   if (!S) return;
+  musicTick();
   if (!running) { safeRender(); return; }
   const dt = Math.min(.25, (now - lastT) / 1000); lastT = now;
   if (!paused && now >= hitStop) {
@@ -5986,7 +6030,7 @@ document.getElementById("zoom").addEventListener("click", e => {
 });
 
 // test/debug hook (the game never uses it)
-window.__sengoku = { SND, SYNTH, TEST_CFG, TEST_FLAG, playtest, RULES, queued, lockText, stepTraining, get S() { return S; }, get CH() { return CH; }, get tut() { return tut; }, CMD, addUnit, ASSETS, IMG, step, start, HERO, heroLevel, palAt, newWorld, canPlace, popCap, popUsed,
+window.__sengoku = { SND, SYNTH, MUS, VOICE, ABUF, TEST_CFG, TEST_FLAG, playtest, RULES, queued, lockText, stepTraining, get S() { return S; }, get CH() { return CH; }, get tut() { return tut; }, CMD, addUnit, ASSETS, IMG, step, start, HERO, heroLevel, palAt, newWorld, canPlace, popCap, popUsed,
   incomeRate, unlockedUnits, rangeOf, costOf, frameFor, zoomStep, zoomLevels, wxNow, drawMini, ANIM, SANDBOX, CHAPTERS, UNITS, BUILDINGS, SIZES, cam, ui, onTap, toScreen, iso, hitTarget, findPath, progress, tutorialTick, planNight,
   G3, setRunning(v) { running = v; } };
 }
