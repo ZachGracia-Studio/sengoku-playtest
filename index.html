@@ -1455,7 +1455,7 @@ const advisor = {
   },
   watch() {   // read the state of the settlement and offer the advice a good retainer would
     const k = keep(), has = t => S.buildings.some(b => b.type === t), soldiers = S.units.filter(u => u.team === "P" && !u.dead && !u.worker && u.type !== "kage").length;
-    if (S.t > 2) this.say("My lord, the valley is ours to hold. Raise a drill yard first, then fill the paddies. The yokai come at dusk.", { key: "welcome" });
+    if (S.t > 2 && !voiceBusy()) this.say("My lord, the valley is ours to hold. Raise a drill yard first, then fill the paddies. The yokai come at dusk.", { key: "welcome" });
     if (S.t > 25 && !has("dojo")) this.say("Without a drill yard we cannot raise soldiers. Tap Build.", { key: "dojo", face: "neutral" });
     if (has("dojo") && !has("granary") && S.t > 40) this.say("Rice is the measure of a domain. A storehouse with paddies will feed our army.", { key: "kura", face: "neutral" });
     if (S.day >= 1 && S.t > 70 && !has("lumber") && S.wood < 60) this.say("Timber runs low. A lumber camp near the woods will keep the carpenters busy.", { key: "lumber", face: "concerned" });
@@ -1526,7 +1526,7 @@ const AUDIO_DIR = "assets/audio/";
 // Music loops: len = the loop's exact length in seconds (the files are cut to loop seamlessly). Seasons without their own track fall back to spring.
 const MUSIC = { day_Spring: { src: "mus_day_spring.mp3", len: 69.0 }, night: { src: "mus_night.mp3", len: 118.0 } };
 // The Elder's voiced lines, by the advisor message key
-const VO = { welcome: "vo/adv_intro.mp3" };
+const VO = { welcome: "vo/adv_intro.mp3", nar_open: "vo/nar_open.mp3", nar_ch_valley: "vo/nar_ch_valley.mp3" };
 const SFX_CACHE = {}, SFX_LAST = {};
 // Synthesised kit (Web Audio, no files): taiko, plucked string, temple bell and wood, tuned to the miyako-bushi scale on D.
 const SND = { on: (() => { try { return localStorage.getItem("sengoku.sound") !== "off"; } catch (e) { return true; } })(), ctx: null, bus: null, noise: null };
@@ -1613,15 +1613,26 @@ function musicTick() {
 }
 // The Elder speaks: music ducks under his voice, then comes back.
 const VOICE = { cur: null };
-function playVoice(key) {
-  const p = VO[key]; if (!p || !SND.on || !SND.ctx || SND.ctx.state !== "running") return;
-  abuf(p).then(b => {
-    if (!b) return; const c = SND.ctx, t = c.currentTime;
+function playVoice(key) {   // resolves with the line's length in seconds (0 if it could not play)
+  const p = VO[key]; if (!p || !SND.on || !SND.ctx || SND.ctx.state !== "running") return Promise.resolve(0);
+  return abuf(p).then(b => {
+    if (!b) return 0; const c = SND.ctx, t = c.currentTime;
     try { VOICE.cur && VOICE.cur.stop(); } catch (e) {}
-    VOICE.cur = playBuf(b, SND.bus, 1);
+    VOICE.cur = playBuf(b, SND.bus, 1); VOICE.until = t + b.duration;
     if (MUS.gain) { MUS.gain.gain.cancelScheduledValues(t); MUS.gain.gain.setTargetAtTime(MUS.vol * .35, t, .12); MUS.gain.gain.setTargetAtTime(MUS.vol, t + b.duration, .5); }
+    return b.duration;
   });
 }
+const voiceBusy = () => !!(SND.ctx && VOICE.until && SND.ctx.currentTime < VOICE.until + .4) || !!VOICE.queue;
+// The narrator opens a chapter: lines play one after another; the advisor waits until he is done.
+function narrate(keys) {
+  if (!SND.on || !SND.ctx || SND.ctx.state !== "running" || !keys.length) return;
+  VOICE.queue = keys.slice();
+  const next = () => { const k = VOICE.queue && VOICE.queue.shift(); if (!k) { VOICE.queue = null; return; }
+    playVoice(k).then(d => { if (!d) { VOICE.queue = null; return; } setTimeout(next, (d + .6) * 1000); }); };
+  next();
+}
+const CH_NARRATION = { valley: ["nar_ch_valley"] };
 function sfx(name) {
   if (!SND.on) return;
   const now = performance.now(); if (now - (SFX_LAST[name] || 0) < 70) return; SFX_LAST[name] = now;
@@ -5974,6 +5985,8 @@ function start(i, seed = 7 + Math.floor(Math.random() * 1000)) {
   ui.place = null; ui.closeSheets(true); centerOnKeep(); advisor.queue = []; advisor.cur = null; advisor.lastT = -99; $("advisor").classList.add("hidden");
   $("startScreen").classList.add("hidden"); $("endScreen").classList.add("hidden");
   running = true; paused = false; lastT = performance.now(); acc = 0;
+  { const lines = CH_NARRATION[CH.id]; if (lines) { let first = false; try { first = !localStorage.getItem("sengoku.heardOpen"); if (first && SND.on && SND.ctx && SND.ctx.state === "running") localStorage.setItem("sengoku.heardOpen", "1"); } catch (e) {}
+    narrate(first ? ["nar_open", ...lines] : lines); } }   // first ever chapter: the storyteller's cold open, then the chapter's line
   ui.banner(ch.tutorial ? "FIRST LIGHT" : ch.sandbox ? "TEST GROUND" : "DAY 1",
     ch.tutorial ? "learn the ways of the keep" : ch.sandbox ? "watch them walk · Night to fight" : `${ch.name} · build before nightfall`);
   ui.refresh();
